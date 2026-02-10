@@ -135,3 +135,21 @@ Pipeline multi-sources : les données issues de plusieurs sources sont agrégée
 Validation côté base : la qualité est garantie par des validateurs MongoDB plutôt que par une validation uniquement applicative.
 Séparation des responsabilités : provisioning, migration et contrôle qualité sont isolés dans des scripts dédiés.
 Réplication : MongoDB est déployé en replica set pour assurer la résilience.
+
+Logigramme Mermaid :  https://mermaid.ai/d/19e27a95-edb3-48dd-8376-31d66ff93959
+
+flowchart TD
+    A[Sources météo<br/>Excel / JSON] --> B[Step 1 - Collecte & Transformation<br/>Python]
+    B --> C[Contrôles qualité pré-migration<br/>quality_report.json]
+    B --> D[Fichiers clean<br/>stations.json<br/>observations.jsonl]
+
+    E[MongoDB Replica Set rs0<br/>Docker Compose] --> F[Step 2 - Provisioning]
+    F --> G[Création collections<br/>stations / observations]
+    F --> H[Validation schéma JSON<br/>Index & unicité]
+
+    D --> I[Step 3 - Migration MongoDB<br/>Python]
+    I --> J[Insert / Upsert MongoDB]
+    J --> K[Qualité post-migration<br/>quality_post_mongo.json<br/>error_rate]
+
+    I --> L[CRUD Proof<br/>Create / Read / Update / Delete]
+
