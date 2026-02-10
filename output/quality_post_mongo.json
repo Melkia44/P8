@@ -1,0 +1,17 @@
+{
+  "stations": {
+    "inserted": 2,
+    "duplicates": 0,
+    "errors": 0
+  },
+  "observations": {
+    "total": 4950,
+    "inserted": 0,
+    "duplicates": 0,
+    "errors": 1120
+  },
+  "mongo_observations_before": 0,
+  "mongo_observations_after": 3830,
+  "write_errors": 1120,
+  "error_rate": 0.22626262626262628
+}
