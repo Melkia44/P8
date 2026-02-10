@@ -10,7 +10,24 @@ from dotenv import load_dotenv
 from pymongo import MongoClient, UpdateOne
 from pymongo.errors import BulkWriteError, OperationFailure
 
+# -------------------------------------------------------------------
+# PROJECT ROOT & PATHS (STEP 2)
+# -------------------------------------------------------------------
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
+DEFAULT_IN_DIR = PROJECT_ROOT / "output" / "01_local_processing"
+DEFAULT_OUT_DIR = PROJECT_ROOT / "output" / "02_local_processing"
+
+IN_DIR = Path(os.getenv("IN_DIR", str(DEFAULT_IN_DIR)))
+OUT_DIR = Path(os.getenv("OUT_DIR", str(DEFAULT_OUT_DIR)))
+
+STATIONS_PATH = Path(os.getenv("STATIONS_PATH", str(IN_DIR / "stations.json")))
+OBS_PATH = Path(os.getenv("OBS_PATH", str(IN_DIR / "observations.jsonl")))
+QUALITY_OUT = Path(os.getenv("QUALITY_OUT", str(OUT_DIR / "quality_post_mongo.json")))
+
+# -------------------------------------------------------------------
+# HELPERS
+# -------------------------------------------------------------------
 def parse_dt(value: Any) -> datetime | None:
     if value is None:
         return None
@@ -24,24 +41,20 @@ def parse_dt(value: Any) -> datetime | None:
             return None
     return None
 
-
-def read_json(path: str) -> Any:
-    with open(path, "r", encoding="utf-8") as f:
+def read_json(path: Path) -> Any:
+    with path.open("r", encoding="utf-8") as f:
         return json.load(f)
 
-
-def read_jsonl(path: str) -> Iterable[dict[str, Any]]:
-    with open(path, "r", encoding="utf-8") as f:
+def read_jsonl(path: Path) -> Iterable[dict[str, Any]]:
+    with path.open("r", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if line:
                 yield json.loads(line)
 
-
-def ensure_dir(path: str) -> None:
-    os.makedirs(path, exist_ok=True)
-
-
+# -------------------------------------------------------------------
+# MIGRATION LOGIC
+# -------------------------------------------------------------------
 def migrate_stations(db, stations: list[dict[str, Any]]) -> dict[str, int]:
     ops = [
         UpdateOne({"station_id": s["station_id"]}, {"$setOnInsert": s}, upsert=True)
@@ -59,24 +72,26 @@ def migrate_stations(db, stations: list[dict[str, Any]]) -> dict[str, int]:
 
     return {"inserted": inserted, "duplicates": duplicates, "errors": errors}
 
-
 def normalize_observation(d: dict[str, Any]) -> dict[str, Any]:
     d = dict(d)
     d["obs_datetime"] = parse_dt(d.get("obs_datetime"))
     d["ingestion_ts"] = parse_dt(d.get("ingestion_ts"))
     return d
 
-
-def migrate_observations(db, obs_path: str) -> dict[str, int]:
+def migrate_observations(db, obs_path: Path) -> dict[str, int]:
     ops: list[UpdateOne] = []
     total = 0
 
     for d in read_jsonl(obs_path):
         total += 1
         d = normalize_observation(d)
-
-        # Upsert by record_hash (clé d’unicité)
-        ops.append(UpdateOne({"record_hash": d["record_hash"]}, {"$setOnInsert": d}, upsert=True))
+        ops.append(
+            UpdateOne(
+                {"record_hash": d["record_hash"]},
+                {"$setOnInsert": d},
+                upsert=True,
+            )
+        )
 
     inserted = duplicates = errors = 0
     if ops:
@@ -89,9 +104,10 @@ def migrate_observations(db, obs_path: str) -> dict[str, int]:
 
     return {"total": total, "inserted": inserted, "duplicates": duplicates, "errors": errors}
 
-
+# -------------------------------------------------------------------
+# CRUD PROOF (JURY FRIENDLY)
+# -------------------------------------------------------------------
 def crud_proof(db) -> dict[str, Any]:
-    # CREATE
     test = {
         "station_id": "TEST01",
         "name": "TestStation",
@@ -100,42 +116,35 @@ def crud_proof(db) -> dict[str, Any]:
         "city": "TestCity",
         "provider": "TEST",
     }
-    db.stations.update_one({"station_id": "TEST01"}, {"$setOnInsert": test}, upsert=True)
 
-    # READ
+    db.stations.update_one({"station_id": "TEST01"}, {"$setOnInsert": test}, upsert=True)
     read_back = db.stations.find_one({"station_id": "TEST01"}, {"_id": 0})
 
-    # UPDATE
     db.stations.update_one({"station_id": "TEST01"}, {"$set": {"hardware": "virtual"}})
     updated = db.stations.find_one({"station_id": "TEST01"}, {"_id": 0})
 
-    # DELETE
     db.stations.delete_one({"station_id": "TEST01"})
     deleted_exists = db.stations.find_one({"station_id": "TEST01"}) is not None
 
     return {"read": read_back, "updated": updated, "deleted_exists": deleted_exists}
 
-
+# -------------------------------------------------------------------
+# MAIN
+# -------------------------------------------------------------------
 def main() -> int:
     load_dotenv()
 
     mongo_uri = os.getenv("MONGO_URI")
     db_name = os.getenv("MONGO_DB", "meteo")
 
-    # Step 2: chemins par défaut alignés avec output/02_local_processing
-    base_out = Path(os.getenv("OUT_DIR", "output/02_local_processing"))
-    stations_path = os.getenv("STATIONS_PATH", str(base_out / "stations.json"))
-    obs_path = os.getenv("OBS_PATH", str(base_out / "observations.jsonl"))
-    quality_out = os.getenv("QUALITY_OUT", str(base_out / "quality_post_mongo.json"))
-
     if not mongo_uri:
-        raise SystemExit("MONGO_URI manquant dans .env")
+        raise SystemExit("MONGO_URI manquant")
 
-    print(f"[MIGRATE] MongoDB URI: {mongo_uri}")
+    print(f"[MIGRATE] Mongo URI: {mongo_uri}")
     print(f"[MIGRATE] Database: {db_name}")
-    print(f"[MIGRATE] Input stations: {stations_path}")
-    print(f"[MIGRATE] Input observations: {obs_path}")
-    print(f"[MIGRATE] Output report: {quality_out}")
+    print(f"[MIGRATE] Input stations: {STATIONS_PATH}")
+    print(f"[MIGRATE] Input observations: {OBS_PATH}")
+    print(f"[MIGRATE] Output report: {QUALITY_OUT}")
 
     client = MongoClient(mongo_uri, appname="p8-de-migrate")
     db = client[db_name]
@@ -146,17 +155,17 @@ def main() -> int:
         raise SystemExit(f"Mongo ping KO: {e}") from e
 
     before_count = db.observations.count_documents({})
-    print(f"[MIGRATE] Observations count BEFORE: {before_count}")
+    print(f"[MIGRATE] Observations BEFORE: {before_count}")
 
-    stations = read_json(stations_path)
+    stations = read_json(STATIONS_PATH)
     if not isinstance(stations, list):
         stations = [stations]
 
     st = migrate_stations(db, stations)
-    ob = migrate_observations(db, obs_path)
+    ob = migrate_observations(db, OBS_PATH)
 
     after_count = db.observations.count_documents({})
-    print(f"[MIGRATE] Observations count AFTER: {after_count}")
+    print(f"[MIGRATE] Observations AFTER: {after_count}")
 
     write_errors = st["errors"] + ob["errors"]
     error_rate = (write_errors / ob["total"]) if ob["total"] else 0.0
@@ -170,9 +179,8 @@ def main() -> int:
         "error_rate": error_rate,
     }
 
-    # Sortie Step 2 : output/02_local_processing
-    base_out.mkdir(parents=True, exist_ok=True)
-    with open(quality_out, "w", encoding="utf-8") as f:
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    with QUALITY_OUT.open("w", encoding="utf-8") as f:
         json.dump(report, f, ensure_ascii=False, indent=2)
 
     print("[MIGRATE] OK - Migration terminée")
@@ -180,7 +188,6 @@ def main() -> int:
     print("[MIGRATE] CRUD proof:", json.dumps(crud_proof(db), ensure_ascii=False, indent=2))
 
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

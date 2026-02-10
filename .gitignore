@@ -1,9 +1,5 @@
-# Python
+output/
+.venv/
 __pycache__/
 *.pyc
-
-# Environnements virtuels
-.venv/
-
-# Variables sensibles
 .env

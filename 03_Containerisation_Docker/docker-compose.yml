@@ -1,3 +1,5 @@
+version: "3.9"
+
 services:
   mongo:
     image: mongo:7
@@ -6,6 +8,8 @@ services:
       MONGO_INITDB_DATABASE: meteo
     volumes:
       - mongo_data:/data/db
+    ports:
+      - "27017:27017"
 
   mongo-express:
     image: mongo-express:1.0.2
@@ -20,20 +24,16 @@ services:
 
   migrate:
     build:
-      context: ./migrate
+      context: .
     container_name: p8_migrate_step3
     environment:
       MONGO_URI: "mongodb://mongo:27017"
       MONGO_DB: "meteo"
-      MONGO_COLLECTION: "observations"
-      EXCEL_DIR: "/data/excel"
-      JSON_DIR: "/data/json"
+      IN_DIR: "/data/in"
       OUT_DIR: "/data/out"
     volumes:
-     - ../data/excel:/data/excel:ro
-     - ../data/json:/data/json:ro
-     - ../output/03_docker_migration:/data/out
-
+      - ../output/01_local_processing:/data/in:ro
+      - ../output/02_local_processing:/data/out
     depends_on:
       - mongo
     command: ["python", "-u", "main.py"]

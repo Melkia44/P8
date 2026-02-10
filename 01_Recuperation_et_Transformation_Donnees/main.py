@@ -4,35 +4,65 @@ import hashlib
 import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
+from pathlib import Path
 
 from dotenv import load_dotenv
 
 from utils import iter_s3_jsonl, s3_put_json, s3_put_jsonl, to_int, to_float
 from stations import STATIONS, SOURCE_TAG_TO_STATION_ID
 
+# -------------------------------------------------------------------
+# ENV & LOGGING
+# -------------------------------------------------------------------
 load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
 
+# -------------------------------------------------------------------
+# PROJECT ROOT & PATHS (STEP 1 ONLY)
+# -------------------------------------------------------------------
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+DATA_DIR = PROJECT_ROOT / "data"
+OUTPUT_DIR = PROJECT_ROOT / "output" / "01_local_processing"
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+# -------------------------------------------------------------------
+# CONFIG
+# -------------------------------------------------------------------
 S3_BUCKET = os.getenv("S3_BUCKET")
 S3_PREFIX_RAW = os.getenv("S3_PREFIX_RAW", "raw/dataset_meteo/")
 S3_PREFIX_OUT = os.getenv("S3_PREFIX_OUT", "processed/dataset_meteo/")
 SOURCE_TAG = os.getenv("SOURCE_TAG", "UNKNOWN")
 
-OUT_DIR = os.getenv("OUT_DIR", "output")
-os.makedirs(OUT_DIR, exist_ok=True)
+# -------------------------------------------------------------------
+# UNIT CONVERSIONS
+# -------------------------------------------------------------------
+def f_to_c(f: float) -> float:
+    return (f - 32.0) * 5.0 / 9.0
 
-def f_to_c(f: float) -> float: return (f - 32.0) * 5.0 / 9.0
-def inhg_to_hpa(x: float) -> float: return x * 33.8638866667
-def mph_to_kmh(x: float) -> float: return x * 1.609344
-def inch_to_mm(x: float) -> float: return x * 25.4
+def inhg_to_hpa(x: float) -> float:
+    return x * 33.8638866667
 
+def mph_to_kmh(x: float) -> float:
+    return x * 1.609344
+
+def inch_to_mm(x: float) -> float:
+    return x * 25.4
+
+# -------------------------------------------------------------------
+# DATETIME HELPERS
+# -------------------------------------------------------------------
 def obs_dt_from_extracted(extracted_ms: int, hhmmss: Optional[str]) -> datetime:
     base = datetime.fromtimestamp(extracted_ms / 1000.0, tz=timezone.utc)
     if not hhmmss:
         return base
     try:
         t = datetime.strptime(str(hhmmss).strip(), "%H:%M:%S").time()
-        return datetime(base.year, base.month, base.day, t.hour, t.minute, t.second, tzinfo=timezone.utc)
+        return datetime(
+            base.year, base.month, base.day,
+            t.hour, t.minute, t.second,
+            tzinfo=timezone.utc
+        )
     except ValueError:
         return base
 
@@ -45,10 +75,19 @@ def parse_dh_utc(v: Any) -> Optional[datetime]:
             pass
     return None
 
+# -------------------------------------------------------------------
+# HASH
+# -------------------------------------------------------------------
 def record_hash(source: str, station_id: str, obs_dt: datetime, d: Dict[str, Any]) -> str:
-    key = f"{source}|{station_id}|{obs_dt.isoformat()}|{d.get('temperature_c')}|{d.get('humidity_pct')}|{d.get('pressure_hpa')}"
+    key = (
+        f"{source}|{station_id}|{obs_dt.isoformat()}|"
+        f"{d.get('temperature_c')}|{d.get('humidity_pct')}|{d.get('pressure_hpa')}"
+    )
     return hashlib.sha256(key.encode("utf-8")).hexdigest()
 
+# -------------------------------------------------------------------
+# TRANSFORMATION
+# -------------------------------------------------------------------
 def transform_record_to_docs(rec: Dict[str, Any]) -> List[Dict[str, Any]]:
     data = rec.get("_airbyte_data")
     if not isinstance(data, dict):
@@ -56,7 +95,7 @@ def transform_record_to_docs(rec: Dict[str, Any]) -> List[Dict[str, Any]]:
 
     docs: List[Dict[str, Any]] = []
 
-    # A) WU flat (issu Excel)
+    # A) Weather Underground (Excel)
     if "Time" in data and "Temperature" in data:
         extracted = rec.get("_airbyte_extracted_at")
         if extracted is None:
@@ -91,10 +130,9 @@ def transform_record_to_docs(rec: Dict[str, Any]) -> List[Dict[str, Any]]:
             "ingestion_ts": datetime.now(timezone.utc).isoformat(),
         }
         d["record_hash"] = record_hash(d["source"], d["station_id"], obs_dt, d)
-        docs.append(d)
-        return docs
+        return [d]
 
-    # B) hourly bundle (JSON)
+    # B) Hourly API bundle (JSON)
     hourly = data.get("hourly")
     if isinstance(hourly, dict):
         for station_id, rows in hourly.items():
@@ -128,13 +166,16 @@ def transform_record_to_docs(rec: Dict[str, Any]) -> List[Dict[str, Any]]:
 
     return docs
 
-def main():
-    obs_out_path = os.path.join(OUT_DIR, "observations.jsonl")
-    stations_out_path = os.path.join(OUT_DIR, "stations.json")
+# -------------------------------------------------------------------
+# MAIN
+# -------------------------------------------------------------------
+def main() -> None:
+    obs_out_path = OUTPUT_DIR / "observations.jsonl"
+    stations_out_path = OUTPUT_DIR / "stations.json"
 
     stats = {"lines": 0, "json_ok": 0, "docs": 0, "rejected": 0}
 
-    with open(obs_out_path, "w", encoding="utf-8") as f_out:
+    with obs_out_path.open("w", encoding="utf-8") as f_out:
         for key, line in iter_s3_jsonl(S3_BUCKET, S3_PREFIX_RAW):
             stats["lines"] += 1
             try:
@@ -153,16 +194,16 @@ def main():
                 f_out.write(json.dumps(d, ensure_ascii=False) + "\n")
             stats["docs"] += len(docs)
 
-    # export stations (fixe)
-    with open(stations_out_path, "w", encoding="utf-8") as f:
-        f.write(json.dumps(STATIONS, ensure_ascii=False, indent=2))
+    # export stations (local)
+    with stations_out_path.open("w", encoding="utf-8") as f:
+        json.dump(STATIONS, f, ensure_ascii=False, indent=2)
 
     # upload vers S3 (Step 1)
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     obs_s3_key = f"{S3_PREFIX_OUT}{SOURCE_TAG}/observations_{ts}.jsonl"
     stations_s3_key = f"{S3_PREFIX_OUT}{SOURCE_TAG}/stations.json"
 
-    with open(obs_out_path, "r", encoding="utf-8") as f:
+    with obs_out_path.open("r", encoding="utf-8") as f:
         s3_put_jsonl(S3_BUCKET, obs_s3_key, (l.rstrip("\n") for l in f))
 
     s3_put_json(S3_BUCKET, stations_s3_key, STATIONS)

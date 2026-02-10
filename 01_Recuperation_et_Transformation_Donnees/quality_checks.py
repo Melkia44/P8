@@ -1,11 +1,19 @@
 import json
 import os
-from collections import Counter, defaultdict
-from typing import Any, Dict, List
+from collections import Counter
+from typing import Any, Dict
 
-OUT_DIR = os.getenv("OUT_DIR", "output")
-OBS_PATH = os.path.join(OUT_DIR, "observations.jsonl")
-REPORT_PATH = os.path.join(OUT_DIR, "quality_report.json")
+from pathlib import Path
+
+# -------------------------------------------------------------------
+# PROJECT ROOT & PATHS (STEP 1 ONLY)
+# -------------------------------------------------------------------
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_OUT_DIR = PROJECT_ROOT / "output" / "01_local_processing"
+
+OUT_DIR = Path(os.getenv("OUT_DIR", str(DEFAULT_OUT_DIR)))
+OBS_PATH = OUT_DIR / "observations.jsonl"
+REPORT_PATH = OUT_DIR / "quality_report.json"
 
 EXPECTED_FIELDS = [
     "obs_datetime", "station_id", "station_provider", "source", "record_hash"
@@ -20,7 +28,14 @@ NUMERIC_FIELDS = [
 def is_null(v: Any) -> bool:
     return v is None or v == ""
 
-def main():
+def main() -> None:
+    if not OBS_PATH.exists():
+        raise FileNotFoundError(
+            f"Observations file not found: {OBS_PATH}\n"
+            f"Run Step 1 first: python 01_Recuperation_et_Transformation_Donnees/main.py\n"
+            f"Or override OUT_DIR to the correct folder."
+        )
+
     total = 0
     missing = Counter()
     nulls = Counter()
@@ -28,13 +43,13 @@ def main():
     duplicates = 0
     hashes = set()
 
-    mins = {}
-    maxs = {}
+    mins: Dict[str, float] = {}
+    maxs: Dict[str, float] = {}
 
     provider_count = Counter()
     station_count = Counter()
 
-    with open(OBS_PATH, "r", encoding="utf-8") as f:
+    with OBS_PATH.open("r", encoding="utf-8") as f:
         for line in f:
             total += 1
             d = json.loads(line)
@@ -81,9 +96,15 @@ def main():
         "min": mins,
         "max": maxs,
         "error_rate_estimate": (duplicates + sum(missing.values()) + sum(types_mismatch.values())) / max(total, 1),
+        "paths": {
+            "out_dir": str(OUT_DIR),
+            "observations": str(OBS_PATH),
+            "report": str(REPORT_PATH),
+        },
     }
 
-    with open(REPORT_PATH, "w", encoding="utf-8") as f:
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    with REPORT_PATH.open("w", encoding="utf-8") as f:
         json.dump(report, f, ensure_ascii=False, indent=2)
 
     print(f"Quality report written: {REPORT_PATH}")
