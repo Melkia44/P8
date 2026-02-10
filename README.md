@@ -1,60 +1,99 @@
 Projet P8 – Pipeline Data Engineering & MongoDB
 Objectif
 
-Mettre en place un pipeline complet de collecte, transformation et stockage de données météorologiques multi-sources, avec migration vers une base MongoDB répliquée, validation de schéma et mesure de la qualité post-migration.
+Concevoir et mettre en œuvre un pipeline complet de traitement de données météorologiques multi-sources, depuis l’ingestion jusqu’au stockage sécurisé dans une base MongoDB conteneurisée, avec normalisation, contrôles qualité et validation de schéma côté base.
 
 Le projet couvre :
 
-l’ingestion de données hétérogènes,
-leur normalisation,
-le contrôle qualité,
-l’importation dans MongoDB via script Python,
-la mise en place de réplications et de validateurs,
-la démonstration des opérations CRUD.
-Architecture générale du pipeline
+ingestion de données hétérogènes (Excel, JSON),
+normalisation dans un schéma commun,
+contrôles qualité pré-migration,
+migration sécurisée vers MongoDB,
+validation de schéma et intégrité des données,
+mesure de la qualité post-migration,
+démonstration des opérations CRUD.
+Architecture du pipeline
 
-Collecte & transformation (Step 1)
-Ingestion des données issues de plusieurs sources météo.
-Normalisation dans un schéma commun.
-Génération de fichiers propres (JSON / JSONL).
+Step 1 – Récupération & transformation des données
+
+Collecte de données issues de plusieurs sources météo.
+Normalisation dans un modèle cible commun.
+Génération de fichiers propres (JSON, JSONL).
 Calcul d’un rapport de qualité pré-migration.
 
-Provisioning MongoDB (Step 2)
-Déploiement d’un replica set MongoDB via Docker Compose.
-Création des collections.
-Application de validateurs de schéma MongoDB.
-Création des index (unicité, performances).
+Step 2 – Migration & sécurisation MongoDB
 
-Migration & qualité post-migration (Step 3)
-Import des données propres via script Python.
-Rejet automatique des documents non conformes.
-Calcul d’un taux d’erreur post-migration.
-Démonstration des opérations CRUD via script.
+Déploiement d’une instance MongoDB via Docker Compose.
+Création des collections et index.
+Application de validateurs de schéma MongoDB ($jsonSchema).
+Migration contrôlée des données via scripts Python.
+
+Step 3 – Conteneurisation
+
+Exécution du pipeline dans un environnement Docker.
+Séparation claire entre exécution locale et conteneurisée.
+
+Step 4 – Déploiement cloud
+
+Utilisation d’AWS S3 comme zone de staging des données issues d’Airbyte.
+
+Rôle d’Airbyte
+
+Airbyte est utilisé pour l’extraction et le chargement des données sources vers une zone de staging (AWS S3).
+Les étapes de transformation, de contrôle qualité et de migration MongoDB sont volontairement réalisées hors Airbyte afin de :
+maîtriser les règles métier,
+centraliser la logique de qualité des données,
+garantir la cohérence des données avant insertion en base.
 
 Arborescence du projet
 P8/
+├── .venv/
+│
+├── 01_Recuperation_et_Transformation_Donnees/
+│   ├── main.py                     # Orchestration collecte + normalisation
+│   ├── stations.py                # Traitement des stations météo
+│   ├── quality_checks.py           # Contrôles qualité pré-migration
+│   ├── utils.py                    # Fonctions utilitaires
+│
+├── 02_Migration_et_Securisation_MongoDB/
+│   ├── __init__.py
+│   ├── 01_provision_mongo.py       # Création collections, schémas, index
+│   ├── 02_migrate_to_mongo.py      # Migration + qualité post-migration + CRUD
+│   └── 03_rejections.py            # Analyse des documents rejetés
+│
+├── 03_Containerisation_Docker/
+│   ├── docker-compose.yml          # MongoDB
+│   ├── Dockerfile                  # Image Python pipeline
+│   ├── main.py                     # Exécution pipeline conteneurisée
+│   └── requirements.txt
+│
+├── 04_Deploiement_AWS/
+│
 ├── data/
+│   ├── airbyte/
+│   │   └── docker-compose.yaml     # Stack Airbyte locale
 │   ├── excel/
+│   │   ├── Weather_Ichtegem_BE.xlsx
+│   │   └── Weather_La_Madeleine_FR.xlsx
 │   └── json/
-├── mongo/
-│   └── docker-compose.yml
+│       └── Data_Source1_011024-071024.json
+│
 ├── output/
-│   ├── stations.json
-│   ├── observations.jsonl
-│   ├── quality_report.json
-│   └── quality_post_mongo.json
-├── src/
-│   ├── main.py
-│   ├── stations.py
-│   ├── quality_checks.py
-│   ├── utils.py
-│   └── mongopy/
-│       ├── __init__.py
-│       ├── 01_provision_mongo.py
-│       └── 02_migrate_to_mongo.py
+│   ├── 01_local_processing/        # Données clean pré-migration
+│   └── 02_local_processing/        # Données post-migration & rapports qualité
+│
 ├── .env
+├── .gitignore
 ├── requirements.txt
 └── README.md
+
+Prérequis
+
+Python 3.10+
+Docker & Docker Compose
+Accès AWS S3
+Ports MongoDB disponibles localement
+
 
 Configuration (.env)
 # AWS / S3
@@ -62,94 +101,105 @@ S3_BUCKET=oc-meteo-staging-data
 S3_PREFIX_RAW=raw/dataset_meteo/
 S3_PREFIX_OUT=processed/dataset_meteo/
 
-# Local outputs
-OUT_DIR=output
-
 # MongoDB
-MONGO_URI=mongodb://mongo1:27017,mongo2:27018,mongo3:27019/?replicaSet=rs0
+MONGO_URI=mongodb://localhost:27017
 MONGO_DB=meteo
 
-# Inputs Mongo (sorties clean)
-STATIONS_PATH=./output/stations.json
-OBS_PATH=./output/observations.jsonl
+Démarrage rapide
+# Démarrage MongoDB
+docker compose -f 03_Containerisation_Docker/docker-compose.yml up -d
 
-# Qualité post-migration
-QUALITY_OUT=./output/quality_post_mongo.json
+# Transformation & qualité pré-migration
+python3 01_Recuperation_et_Transformation_Donnees/main.py
 
-Step 2 – Provisioning MongoDB
+# Provisioning MongoDB
+python3 02_Migration_et_Securisation_MongoDB/01_provision_mongo.py
 
-Le provisioning est réalisé via le script :
-python3 -m src.mongopy.01_provision_mongo
+# Migration + qualité post-migration + CRUD
+python3 02_Migration_et_Securisation_MongoDB/02_migrate_to_mongo.py
 
 
-Ce script :
+Le pipeline est idempotent et peut être relancé sans effet de bord.
 
-se connecte au replica set MongoDB,
+Provisioning MongoDB
+
+Le script 01_provision_mongo.py :
+
 crée les collections stations et observations,
 applique des validateurs de schéma MongoDB ($jsonSchema),
 crée les index suivants :
 unicité sur station_id,
 unicité sur record_hash,
 index temporels et fonctionnels.
-L’opération est idempotente et peut être rejouée sans effet de bord.
 
-Step 3 – Migration des données & qualité post-migration
+Les contraintes sont appliquées côté base afin de garantir l’intégrité des données.
 
-La migration est réalisée via :
-python3 -m src.mongopy.02_migrate_to_mongo
+Migration & qualité post-migration
 
-Fonctionnalités :
-import des stations et observations depuis les fichiers propres,
-conversion des champs temporels (datetime),
-upsert basé sur des clés d’unicité,
-rejet automatique des documents non conformes au schéma MongoDB,
-calcul d’un rapport de qualité post-migration,
-démonstration des opérations CRUD via script Python.
+Le script 02_migrate_to_mongo.py :
+
+importe les données propres depuis les fichiers générés,
+convertit les champs temporels (datetime),
+applique des upserts basés sur des clés d’unicité,
+rejette automatiquement les documents non conformes,
+génère un rapport de qualité post-migration,
+démontre les opérations CRUD via script Python.
+Qualité des données
+Qualité pré-migration
+vérification des types,
+champs obligatoires,
+doublons,
+valeurs manquantes.
+
+Un rapport est généré dans output/01_local_processing.
+
 Qualité post-migration
-Un rapport est généré automatiquement :
-output/quality_post_mongo.json
 
-Il contient notamment :
+Un rapport est généré automatiquement :
+
+output/02_local_processing/quality_post_mongo.json
+
+Il contient :
+
 nombre total de documents traités,
-nombre de documents insérés,
-nombre de documents rejetés,
+documents insérés,
+documents rejetés,
 taux d’erreur post-migration.
 
-Les erreurs correspondent aux documents volontairement rejetés par MongoDB en raison de contraintes de validation (types, bornes, champs obligatoires).
-Ce mécanisme garantit l’intégrité des données stockées.
-
-Le taux d’erreur post-migration (~22 %) correspond à des rejets techniques MongoDB (validation de schéma et index uniques) lors de l’insertion en mode bulk_write non ordonné.
-Une analyse métier indépendante des données sources montre un taux de rejet fonctionnel de 0 %, confirmant que les données sont cohérentes et conformes aux règles métier.
-Les rejets MongoDB sont donc des mécanismes de protection de l’intégrité de la base (déduplication, typage strict) et non des erreurs de qualité des données.
+Les rejets correspondent à des mécanismes de validation MongoDB et non à des incohérences métier.
 
 Opérations CRUD
 
-Le script de migration inclut une démonstration complète des opérations CRUD :
-Create : insertion d’une station de test,
-Read : lecture du document inséré,
-Update : modification d’un champ,
-Delete : suppression du document.
-Cette démonstration est réalisée exclusivement via script Python.
-Choix de conception
-Pipeline multi-sources : les données issues de plusieurs sources sont agrégées et normalisées avant la migration MongoDB.
-Validation côté base : la qualité est garantie par des validateurs MongoDB plutôt que par une validation uniquement applicative.
-Séparation des responsabilités : provisioning, migration et contrôle qualité sont isolés dans des scripts dédiés.
-Réplication : MongoDB est déployé en replica set pour assurer la résilience.
+Le script de migration inclut une démonstration complète :
+Create
+Read
+Update
+Delete
 
-Logigramme Mermaid :  https://mermaid.ai/d/19e27a95-edb3-48dd-8376-31d66ff93959
+Toutes les opérations sont réalisées via script Python.
+
+Choix de conception
+
+Pipeline multi-sources avec normalisation centralisée.
+Validation de la qualité côté base MongoDB.
+Séparation claire des responsabilités.
+Pipeline idempotent et relançable.
+Déploiement MongoDB conteneurisé pour reproductibilité.
+Architecture compatible industrialisation.
+
+Logigramme du pipeline
+
+Diagramme Mermaid :
+https://mermaid.ai/d/19e27a95-edb3-48dd-8376-31d66ff93959
 
 flowchart TD
-    A[Sources météo<br/>Excel / JSON] --> B[Step 1 - Collecte & Transformation<br/>Python]
-    B --> C[Contrôles qualité pré-migration<br/>quality_report.json]
-    B --> D[Fichiers clean<br/>stations.json<br/>observations.jsonl]
+    A[Sources météo<br/>Excel / JSON] --> B[Transformation Python]
+    B --> C[Qualité pré-migration]
+    B --> D[Fichiers clean]
 
-    E[MongoDB Replica Set rs0<br/>Docker Compose] --> F[Step 2 - Provisioning]
-    F --> G[Création collections<br/>stations / observations]
-    F --> H[Validation schéma JSON<br/>Index & unicité]
+    E[MongoDB Docker] --> F[Provisioning]
+    F --> G[Schémas & index]
 
-    D --> I[Step 3 - Migration MongoDB<br/>Python]
-    I --> J[Insert / Upsert MongoDB]
-    J --> K[Qualité post-migration<br/>quality_post_mongo.json<br/>error_rate]
-
-    I --> L[CRUD Proof<br/>Create / Read / Update / Delete]
-
+    D --> H[Migration MongoDB]
+    H --> I[Qualité post-migration]
+    H --> J[CRUD]
