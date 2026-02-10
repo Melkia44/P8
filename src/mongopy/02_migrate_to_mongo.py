@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Iterable
 
 from dotenv import load_dotenv
@@ -121,9 +122,11 @@ def main() -> int:
     mongo_uri = os.getenv("MONGO_URI")
     db_name = os.getenv("MONGO_DB", "meteo")
 
-    stations_path = os.getenv("STATIONS_PATH", "./output/stations.json")
-    obs_path = os.getenv("OBS_PATH", "./output/observations.jsonl")
-    quality_out = os.getenv("QUALITY_OUT", "./output/quality_post_mongo.json")
+    # Step 2: chemins par défaut alignés avec output/02_local_processing
+    base_out = Path(os.getenv("OUT_DIR", "output/02_local_processing"))
+    stations_path = os.getenv("STATIONS_PATH", str(base_out / "stations.json"))
+    obs_path = os.getenv("OBS_PATH", str(base_out / "observations.jsonl"))
+    quality_out = os.getenv("QUALITY_OUT", str(base_out / "quality_post_mongo.json"))
 
     if not mongo_uri:
         raise SystemExit("MONGO_URI manquant dans .env")
@@ -167,7 +170,8 @@ def main() -> int:
         "error_rate": error_rate,
     }
 
-    ensure_dir(os.path.dirname(quality_out) or ".")
+    # Sortie Step 2 : output/02_local_processing
+    base_out.mkdir(parents=True, exist_ok=True)
     with open(quality_out, "w", encoding="utf-8") as f:
         json.dump(report, f, ensure_ascii=False, indent=2)
 
