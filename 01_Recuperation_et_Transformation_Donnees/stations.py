@@ -1,3 +1,12 @@
+from datetime import datetime, timezone
+
+# -------------------------------------------------------------------
+# Stations WU (Excel)
+# - On garde les IDs "bruts" ici (ILAMAD25 / IICHTE19)
+# - Le préfixage WU:... est fait dans main.py (normalize_station_id)
+# -------------------------------------------------------------------
+_NOW = datetime.now(timezone.utc).isoformat()
+
 STATIONS = [
     {
         "station_id": "ILAMAD25",
@@ -10,6 +19,9 @@ STATIONS = [
         "hardware": "other",
         "software": "EasyWeatherPro_V5.1.6",
         "provider": "WU",
+        "source": "WU_EXCEL",
+        "created_at": _NOW,
+        "updated_at": _NOW,
     },
     {
         "station_id": "IICHTE19",
@@ -22,10 +34,15 @@ STATIONS = [
         "hardware": "other",
         "software": "EasyWeatherV1.6.6",
         "provider": "WU",
+        "source": "WU_EXCEL",
+        "created_at": _NOW,
+        "updated_at": _NOW,
     },
 ]
 
-# mapping pour relier un run WU à une station
+# -------------------------------------------------------------------
+# Mapping pour relier un run WU (SOURCE_TAG) à une station
+# -------------------------------------------------------------------
 SOURCE_TAG_TO_STATION_ID = {
     "WU_LA_MADELEINE": "ILAMAD25",
     "WU_ICHTEGEM": "IICHTE19",

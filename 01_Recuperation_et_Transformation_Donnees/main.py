@@ -35,6 +35,19 @@ S3_PREFIX_OUT = os.getenv("S3_PREFIX_OUT", "processed/dataset_meteo/")
 SOURCE_TAG = os.getenv("SOURCE_TAG", "UNKNOWN")
 
 # -------------------------------------------------------------------
+# STATION ID NORMALIZATION
+# -------------------------------------------------------------------
+def normalize_station_id(provider: str, sid: Any) -> str:
+    return f"{provider}:{str(sid).strip()}"
+
+def wu_station_id_from_source_tag(source_tag: str) -> str:
+    raw = SOURCE_TAG_TO_STATION_ID.get(source_tag, source_tag)
+    return normalize_station_id("WU", raw)
+
+def src1_station_id(raw_sid: Any) -> str:
+    return normalize_station_id("SRC1", raw_sid)
+
+# -------------------------------------------------------------------
 # UNIT CONVERSIONS
 # -------------------------------------------------------------------
 def f_to_c(f: float) -> float:
@@ -81,9 +94,50 @@ def parse_dh_utc(v: Any) -> Optional[datetime]:
 def record_hash(source: str, station_id: str, obs_dt: datetime, d: Dict[str, Any]) -> str:
     key = (
         f"{source}|{station_id}|{obs_dt.isoformat()}|"
-        f"{d.get('temperature_c')}|{d.get('humidity_pct')}|{d.get('pressure_hpa')}"
+        f"{d.get('temperature_c')}|{d.get('humidity_pct')}|{d.get('pressure_hpa')}|"
+        f"{d.get('sync_id')}"
     )
     return hashlib.sha256(key.encode("utf-8")).hexdigest()
+
+# -------------------------------------------------------------------
+# STATIONS EXTRACTION (SOURCE1 JSON)
+# -------------------------------------------------------------------
+def extract_stations_from_record(rec: Dict[str, Any]) -> List[Dict[str, Any]]:
+    data = rec.get("_airbyte_data")
+    if not isinstance(data, dict):
+        return []
+
+    stations = data.get("stations")
+    if not isinstance(stations, list):
+        return []
+
+    out: List[Dict[str, Any]] = []
+    for s in stations:
+        if not isinstance(s, dict):
+            continue
+        raw_id = s.get("id")
+        if raw_id is None:
+            continue
+
+        out.append(
+            {
+                "station_id": src1_station_id(raw_id),
+                "name": s.get("name"),
+                "lat": to_float(s.get("latitude")),
+                "lon": to_float(s.get("longitude")),
+                "elevation_m": to_int(s.get("elevation")) if s.get("elevation") is not None else None,
+                "city": s.get("name"),
+                "state": "-/-",
+                "hardware": "other",
+                "software": None,
+                "provider": "SRC1",
+                "source": "SOURCE1_JSON",
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+        )
+
+    return out
 
 # -------------------------------------------------------------------
 # TRANSFORMATION
@@ -101,7 +155,7 @@ def transform_record_to_docs(rec: Dict[str, Any]) -> List[Dict[str, Any]]:
         if extracted is None:
             return []
 
-        station_id = SOURCE_TAG_TO_STATION_ID.get(SOURCE_TAG, SOURCE_TAG)
+        station_id = wu_station_id_from_source_tag(SOURCE_TAG)
         obs_dt = obs_dt_from_extracted(int(extracted), data.get("Time"))
 
         temp_f = to_float(data.get("Temperature"))
@@ -125,29 +179,33 @@ def transform_record_to_docs(rec: Dict[str, Any]) -> List[Dict[str, Any]]:
             "wind_gust_kmh": mph_to_kmh(gust_mph) if gust_mph is not None else None,
             "precip_rate_mm": inch_to_mm(pr_in) if pr_in is not None else None,
             "precip_accum_mm": inch_to_mm(pa_in) if pa_in is not None else None,
-            "source": SOURCE_TAG,
+            "source": "WU_EXCEL",
             "sync_id": rec.get("_airbyte_meta", {}).get("sync_id"),
             "ingestion_ts": datetime.now(timezone.utc).isoformat(),
         }
         d["record_hash"] = record_hash(d["source"], d["station_id"], obs_dt, d)
         return [d]
 
-    # B) Hourly API bundle (JSON)
+    # B) Hourly API bundle (SOURCE1 JSON)
     hourly = data.get("hourly")
     if isinstance(hourly, dict):
-        for station_id, rows in hourly.items():
-            if station_id == "_params" or not isinstance(rows, list):
+        for raw_station_id, rows in hourly.items():
+            if raw_station_id == "_params" or not isinstance(rows, list):
                 continue
+
+            station_id = src1_station_id(raw_station_id)
+
             for r in rows:
                 if not isinstance(r, dict):
                     continue
                 obs_dt = parse_dh_utc(r.get("dh_utc"))
                 if obs_dt is None:
                     continue
+
                 d = {
                     "obs_datetime": obs_dt.isoformat(),
                     "station_id": station_id,
-                    "station_provider": "API_HOURLY",
+                    "station_provider": "SRC1",
                     "temperature_c": to_float(r.get("temperature")),
                     "pressure_hpa": to_float(r.get("pression")),
                     "humidity_pct": to_int(r.get("humidite")),
@@ -157,7 +215,7 @@ def transform_record_to_docs(rec: Dict[str, Any]) -> List[Dict[str, Any]]:
                     "wind_dir": to_int(r.get("vent_direction")),
                     "precip_1h_mm": to_float(r.get("pluie_1h")),
                     "precip_3h_mm": to_float(r.get("pluie_3h")),
-                    "source": SOURCE_TAG,
+                    "source": "SOURCE1_JSON",
                     "sync_id": rec.get("_airbyte_meta", {}).get("sync_id"),
                     "ingestion_ts": datetime.now(timezone.utc).isoformat(),
                 }
@@ -170,11 +228,39 @@ def transform_record_to_docs(rec: Dict[str, Any]) -> List[Dict[str, Any]]:
 # MAIN
 # -------------------------------------------------------------------
 def main() -> None:
+    if not S3_BUCKET:
+        raise ValueError("S3_BUCKET is not set (check your .env)")
+
     obs_out_path = OUTPUT_DIR / "observations.jsonl"
     stations_out_path = OUTPUT_DIR / "stations.json"
 
-    stats = {"lines": 0, "json_ok": 0, "docs": 0, "rejected": 0}
+    stats = {
+        "lines": 0,
+        "json_ok": 0,
+        "docs_written": 0,
+        "rejected": 0,
+        "stations_total": 0,
+        "stations_from_wu": 0,
+        "stations_from_source1": 0,
+        "fk_rejected": 0,
+    }
 
+    # Build stations map (start with WU stations from stations.py)
+    stations_map: Dict[str, Dict[str, Any]] = {}
+    for s in STATIONS:
+        if not isinstance(s, dict) or "station_id" not in s:
+            continue
+        sid = normalize_station_id("WU", s["station_id"])
+        s2 = dict(s)
+        s2["station_id"] = sid
+        s2["provider"] = "WU"
+        s2["source"] = "WU_EXCEL"
+        s2.setdefault("created_at", datetime.now(timezone.utc).isoformat())
+        s2.setdefault("updated_at", datetime.now(timezone.utc).isoformat())
+        stations_map[sid] = s2
+    stats["stations_from_wu"] = len(stations_map)
+
+    # Read raw, collect stations Source1, write observations with FK check
     with obs_out_path.open("w", encoding="utf-8") as f_out:
         for key, line in iter_s3_jsonl(S3_BUCKET, S3_PREFIX_RAW):
             stats["lines"] += 1
@@ -185,18 +271,29 @@ def main() -> None:
                 stats["rejected"] += 1
                 continue
 
+            # Collect Source1 stations when present
+            for st in extract_stations_from_record(rec):
+                stations_map[st["station_id"]] = st
+
             docs = transform_record_to_docs(rec)
             if not docs:
                 stats["rejected"] += 1
                 continue
 
             for d in docs:
+                if d.get("station_id") not in stations_map:
+                    stats["fk_rejected"] += 1
+                    continue
                 f_out.write(json.dumps(d, ensure_ascii=False) + "\n")
-            stats["docs"] += len(docs)
+                stats["docs_written"] += 1
+
+    stations_list = list(stations_map.values())
+    stats["stations_total"] = len(stations_list)
+    stats["stations_from_source1"] = stats["stations_total"] - stats["stations_from_wu"]
 
     # export stations (local)
     with stations_out_path.open("w", encoding="utf-8") as f:
-        json.dump(STATIONS, f, ensure_ascii=False, indent=2)
+        json.dump(stations_list, f, ensure_ascii=False, indent=2)
 
     # upload vers S3 (Step 1)
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
@@ -206,7 +303,7 @@ def main() -> None:
     with obs_out_path.open("r", encoding="utf-8") as f:
         s3_put_jsonl(S3_BUCKET, obs_s3_key, (l.rstrip("\n") for l in f))
 
-    s3_put_json(S3_BUCKET, stations_s3_key, STATIONS)
+    s3_put_json(S3_BUCKET, stations_s3_key, stations_list)
 
     logging.info(f"STATS: {stats}")
     logging.info(f"OUTPUT local: {obs_out_path} | {stations_out_path}")

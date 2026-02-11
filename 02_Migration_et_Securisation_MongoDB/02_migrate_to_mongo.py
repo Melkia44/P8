@@ -53,12 +53,36 @@ def read_jsonl(path: Path) -> Iterable[dict[str, Any]]:
                 yield json.loads(line)
 
 # -------------------------------------------------------------------
+# INDEXES (PERF + "IMPORT EFFICIENT")
+# -------------------------------------------------------------------
+def ensure_indexes(db) -> None:
+    # stations: station_id unique
+    db.stations.create_index([("station_id", 1)], unique=True, name="ux_station_id")
+
+    # observations: record_hash unique + main query path
+    db.observations.create_index([("record_hash", 1)], unique=True, name="ux_record_hash")
+    db.observations.create_index([("station_id", 1), ("obs_datetime", 1)], name="ix_station_datetime")
+
+    # optional (analytics by date)
+    # db.observations.create_index([("obs_datetime", 1)], name="ix_datetime")
+
+# -------------------------------------------------------------------
 # MIGRATION LOGIC
 # -------------------------------------------------------------------
+def normalize_station(d: dict[str, Any]) -> dict[str, Any]:
+    d = dict(d)
+    # optional: parse dates if present
+    if "created_at" in d:
+        d["created_at"] = parse_dt(d.get("created_at")) or d.get("created_at")
+    if "updated_at" in d:
+        d["updated_at"] = parse_dt(d.get("updated_at")) or d.get("updated_at")
+    return d
+
 def migrate_stations(db, stations: list[dict[str, Any]]) -> dict[str, int]:
     ops = [
-        UpdateOne({"station_id": s["station_id"]}, {"$setOnInsert": s}, upsert=True)
+        UpdateOne({"station_id": s["station_id"]}, {"$setOnInsert": normalize_station(s)}, upsert=True)
         for s in stations
+        if isinstance(s, dict) and s.get("station_id")
     ]
 
     inserted = duplicates = errors = 0
@@ -108,23 +132,31 @@ def migrate_observations(db, obs_path: Path) -> dict[str, int]:
 # CRUD PROOF (JURY FRIENDLY)
 # -------------------------------------------------------------------
 def crud_proof(db) -> dict[str, Any]:
+    # Respecte le format station_id "PROVIDER:ID"
+    test_id = "TEST:TEST01"
     test = {
-        "station_id": "TEST01",
+        "station_id": test_id,
         "name": "TestStation",
         "lat": 0.0,
         "lon": 0.0,
         "city": "TestCity",
+        "state": "-/-",
+        "hardware": "virtual",
+        "software": None,
         "provider": "TEST",
+        "source": "CRUD_PROOF",
+        "created_at": datetime.utcnow().isoformat() + "Z",
+        "updated_at": datetime.utcnow().isoformat() + "Z",
     }
 
-    db.stations.update_one({"station_id": "TEST01"}, {"$setOnInsert": test}, upsert=True)
-    read_back = db.stations.find_one({"station_id": "TEST01"}, {"_id": 0})
+    db.stations.update_one({"station_id": test_id}, {"$setOnInsert": test}, upsert=True)
+    read_back = db.stations.find_one({"station_id": test_id}, {"_id": 0})
 
-    db.stations.update_one({"station_id": "TEST01"}, {"$set": {"hardware": "virtual"}})
-    updated = db.stations.find_one({"station_id": "TEST01"}, {"_id": 0})
+    db.stations.update_one({"station_id": test_id}, {"$set": {"hardware": "virtual_v2"}})
+    updated = db.stations.find_one({"station_id": test_id}, {"_id": 0})
 
-    db.stations.delete_one({"station_id": "TEST01"})
-    deleted_exists = db.stations.find_one({"station_id": "TEST01"}) is not None
+    db.stations.delete_one({"station_id": test_id})
+    deleted_exists = db.stations.find_one({"station_id": test_id}) is not None
 
     return {"read": read_back, "updated": updated, "deleted_exists": deleted_exists}
 
@@ -154,6 +186,9 @@ def main() -> int:
     except OperationFailure as e:
         raise SystemExit(f"Mongo ping KO: {e}") from e
 
+    # Indexes = perf + import efficient
+    ensure_indexes(db)
+
     before_count = db.observations.count_documents({})
     print(f"[MIGRATE] Observations BEFORE: {before_count}")
 
@@ -177,6 +212,10 @@ def main() -> int:
         "mongo_observations_after": after_count,
         "write_errors": write_errors,
         "error_rate": error_rate,
+        "indexes": {
+            "stations": ["ux_station_id"],
+            "observations": ["ux_record_hash", "ix_station_datetime"],
+        },
     }
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)

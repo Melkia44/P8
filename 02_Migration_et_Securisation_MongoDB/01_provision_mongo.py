@@ -53,12 +53,30 @@ def read_jsonl(path: Path) -> Iterable[dict[str, Any]]:
                 yield json.loads(line)
 
 # -------------------------------------------------------------------
+# MONGO SETUP (INDEXES)
+# -------------------------------------------------------------------
+def ensure_indexes(db) -> None:
+    # stations: station_id unique
+    db.stations.create_index([("station_id", 1)], unique=True, name="ux_station_id")
+
+    # observations: record_hash unique + main index for (station, date)
+    db.observations.create_index([("record_hash", 1)], unique=True, name="ux_record_hash")
+    db.observations.create_index([("station_id", 1), ("obs_datetime", 1)], name="ix_station_datetime")
+
+# -------------------------------------------------------------------
 # MIGRATION LOGIC
 # -------------------------------------------------------------------
+def normalize_station(d: dict[str, Any]) -> dict[str, Any]:
+    d = dict(d)
+    d["created_at"] = parse_dt(d.get("created_at")) or d.get("created_at")
+    d["updated_at"] = parse_dt(d.get("updated_at")) or d.get("updated_at")
+    return d
+
 def migrate_stations(db, stations: list[dict[str, Any]]) -> dict[str, int]:
     ops = [
-        UpdateOne({"station_id": s["station_id"]}, {"$setOnInsert": s}, upsert=True)
+        UpdateOne({"station_id": s["station_id"]}, {"$setOnInsert": normalize_station(s)}, upsert=True)
         for s in stations
+        if isinstance(s, dict) and s.get("station_id")
     ]
 
     inserted = duplicates = errors = 0
@@ -109,22 +127,23 @@ def migrate_observations(db, obs_path: Path) -> dict[str, int]:
 # -------------------------------------------------------------------
 def crud_proof(db) -> dict[str, Any]:
     test = {
-        "station_id": "TEST01",
+        "station_id": "TEST:TEST01",
         "name": "TestStation",
         "lat": 0.0,
         "lon": 0.0,
         "city": "TestCity",
         "provider": "TEST",
+        "source": "CRUD_PROOF",
     }
 
-    db.stations.update_one({"station_id": "TEST01"}, {"$setOnInsert": test}, upsert=True)
-    read_back = db.stations.find_one({"station_id": "TEST01"}, {"_id": 0})
+    db.stations.update_one({"station_id": test["station_id"]}, {"$setOnInsert": test}, upsert=True)
+    read_back = db.stations.find_one({"station_id": test["station_id"]}, {"_id": 0})
 
-    db.stations.update_one({"station_id": "TEST01"}, {"$set": {"hardware": "virtual"}})
-    updated = db.stations.find_one({"station_id": "TEST01"}, {"_id": 0})
+    db.stations.update_one({"station_id": test["station_id"]}, {"$set": {"hardware": "virtual"}})
+    updated = db.stations.find_one({"station_id": test["station_id"]}, {"_id": 0})
 
-    db.stations.delete_one({"station_id": "TEST01"})
-    deleted_exists = db.stations.find_one({"station_id": "TEST01"}) is not None
+    db.stations.delete_one({"station_id": test["station_id"]})
+    deleted_exists = db.stations.find_one({"station_id": test["station_id"]}) is not None
 
     return {"read": read_back, "updated": updated, "deleted_exists": deleted_exists}
 
@@ -153,6 +172,9 @@ def main() -> int:
         db.command("ping")
     except OperationFailure as e:
         raise SystemExit(f"Mongo ping KO: {e}") from e
+
+    # indexes = perf + import efficient
+    ensure_indexes(db)
 
     before_count = db.observations.count_documents({})
     print(f"[MIGRATE] Observations BEFORE: {before_count}")

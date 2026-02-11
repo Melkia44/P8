@@ -10,6 +10,11 @@ services:
       - mongo_data:/data/db
     ports:
       - "27017:27017"
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
   mongo-express:
     image: mongo-express:1.0.2
@@ -20,7 +25,9 @@ services:
       ME_CONFIG_MONGODB_SERVER: mongo
       ME_CONFIG_MONGODB_PORT: 27017
     depends_on:
-      - mongo
+      mongo:
+        condition: service_healthy
+    restart: unless-stopped
 
   migrate:
     build:
@@ -31,12 +38,17 @@ services:
       MONGO_DB: "meteo"
       IN_DIR: "/data/in"
       OUT_DIR: "/data/out"
+      STATIONS_PATH: "/data/in/stations.json"
+      OBS_PATH: "/data/in/observations.jsonl"
+      QUALITY_OUT: "/data/out/quality_post_mongo.json"
     volumes:
       - ../output/01_local_processing:/data/in:ro
       - ../output/02_local_processing:/data/out
     depends_on:
-      - mongo
-    command: ["python", "-u", "main.py"]
+      mongo:
+        condition: service_healthy
+    command: ["python", "-u", "02_migrate_to_mongo.py"]
+    restart: "no"
 
 volumes:
   mongo_data:
