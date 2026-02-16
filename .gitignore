@@ -3,3 +3,11 @@ output/
 __pycache__/
 *.pyc
 .env
+# Ignore tout data
+data/*
+
+# Mais garde le dossier airbyte
+!data/airbyte/
+
+# Et garde son contenu
+!data/airbyte/**
