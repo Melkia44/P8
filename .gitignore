@@ -22,3 +22,6 @@ output/
 # OS
 # =========================
 .DS_Store
+
+# Generated outputs (Step 01)
+01_Recuperation_et_Transformation_Donnees/weather_data*.json
