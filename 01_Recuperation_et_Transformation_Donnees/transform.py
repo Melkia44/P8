@@ -19,10 +19,10 @@ Sorties (par défaut):
 - <data-root>/airbyte/weather_data.quality.json
 
 Usage:
-  python transform.py
-  python transform.py --data-root /chemin/vers/data
-  DATA_ROOT=/chemin/vers/data python transform.py
-  python transform.py --output /tmp/weather.jsonl
+  python3 transform.py
+  python3 transform.py --data-root /chemin/vers/data
+  DATA_ROOT=/chemin/vers/data python3 transform.py
+  python3 transform.py --output /tmp/weather.jsonl
 """
 
 import os
@@ -94,8 +94,8 @@ WU_STATIONS = {
 def resolve_paths(data_root_arg: str | None, output_arg: str | None) -> dict:
     """
     Résout les chemins de façon portable :
-    - Tu peux exécuter le script depuis n'importe où.
-    - Les entrées sont cherchées dans data-root.
+    - Exécution depuis n'importe où.
+    - Entrées cherchées dans data-root.
     - data-root = --data-root OR env DATA_ROOT OR /home/melkia/P8/data
     - output:
         - si chemin relatif -> <data-root>/airbyte/<output>
@@ -176,11 +176,9 @@ def parse_wu_value(raw) -> float:
     if s in {"", "-", "--", "N/A"}:
         return np.nan
 
-    # Ex: "0 w/m²" -> "0"
     parts = s.split()
     token = parts[0] if parts else s
     token = token.replace(",", ".")
-    # Ex: "< 0.1" -> "0.1"
     token = token.lstrip("<").strip()
 
     try:
@@ -193,6 +191,38 @@ def wind_text_to_degrees(text) -> float:
     if text is None or not isinstance(text, str) or text.strip() == "":
         return np.nan
     return WIND_DIR_MAP.get(text.strip(), np.nan)
+
+
+# ============================================================
+# SANITIZE JSON (NaN/Inf -> None)
+# ============================================================
+def sanitize_for_json(obj):
+    """
+    Nettoyage récursif:
+    - NaN/Inf -> None
+    - np scalars -> python scalars
+    - dict/list -> récursif
+    """
+    if obj is None:
+        return None
+
+    if isinstance(obj, (np.integer,)):
+        return int(obj)
+
+    if isinstance(obj, (np.floating,)):
+        x = float(obj)
+        return None if math.isnan(x) or math.isinf(x) else x
+
+    if isinstance(obj, float):
+        return None if math.isnan(obj) or math.isinf(obj) else obj
+
+    if isinstance(obj, dict):
+        return {k: sanitize_for_json(v) for k, v in obj.items()}
+
+    if isinstance(obj, list):
+        return [sanitize_for_json(v) for v in obj]
+
+    return obj
 
 
 # ============================================================
@@ -225,7 +255,7 @@ def parse_infoclimat(filepath: str | Path) -> pd.DataFrame:
         for rec in records:
             all_records.append({
                 "source": "infoclimat",
-                "station_id": station_id,
+                "station_id": str(station_id),
                 "station_name": meta.get("station_name"),
                 "latitude": meta.get("latitude"),
                 "longitude": meta.get("longitude"),
@@ -252,13 +282,15 @@ def parse_infoclimat(filepath: str | Path) -> pd.DataFrame:
     df = pd.DataFrame(all_records)
 
     numeric_cols = [
+        "latitude", "longitude", "elevation",
         "temperature_c", "dew_point_c", "humidity_pct",
         "wind_direction_deg", "wind_speed_kmh", "wind_gust_kmh",
         "pressure_hpa", "precip_rate_mm", "precip_accum_mm",
         "visibility_m", "snow_depth_cm", "cloud_cover_octas",
     ]
     for col in numeric_cols:
-        df[col] = pd.to_numeric(df[col], errors="coerce")
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
 
     df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
     logger.info(f"  → {len(df)} enregistrements, {df['station_id'].nunique()} stations")
@@ -277,7 +309,6 @@ def parse_weather_underground(filepath: str | Path, station_id: str) -> pd.DataF
     all_dfs = []
 
     for sheet_name in xl.sheet_names:
-        # date depuis le nom d'onglet (ex "011024")
         try:
             day = int(sheet_name[:2])
             month = int(sheet_name[2:4])
@@ -294,7 +325,10 @@ def parse_weather_underground(filepath: str | Path, station_id: str) -> pd.DataF
             logger.warning(f"  Sheet '{sheet_name}' vide, skip")
             continue
 
-        # Timestamp : tolérant (time / datetime / string)
+        if "Time" not in df_sheet.columns:
+            logger.warning(f"  Sheet '{sheet_name}' sans colonne 'Time', skip")
+            continue
+
         def to_ts(t):
             if pd.isna(t):
                 return pd.NaT
@@ -307,13 +341,8 @@ def parse_weather_underground(filepath: str | Path, station_id: str) -> pd.DataF
                 return pd.NaT
             return datetime.combine(sheet_date, parsed.to_pydatetime().time())
 
-        if "Time" not in df_sheet.columns:
-            logger.warning(f"  Sheet '{sheet_name}' sans colonne 'Time', skip")
-            continue
-
         df_sheet["timestamp"] = df_sheet["Time"].apply(to_ts)
 
-        # Conversions WU -> métrique
         df_sheet["temperature_c"] = df_sheet["Temperature"].apply(parse_wu_value).apply(
             lambda x: fahrenheit_to_celsius(x) if pd.notna(x) else np.nan
         )
@@ -337,10 +366,9 @@ def parse_weather_underground(filepath: str | Path, station_id: str) -> pd.DataF
         df_sheet["precip_accum_mm"] = df_sheet["Precip. Accum."].apply(parse_wu_value).apply(
             lambda x: inches_to_mm(x) if pd.notna(x) else np.nan
         )
-        df_sheet["uv_index"] = pd.to_numeric(df_sheet["UV"], errors="coerce")
-        df_sheet["solar_radiation_wm2"] = df_sheet["Solar"].apply(parse_wu_value)
+        df_sheet["uv_index"] = pd.to_numeric(df_sheet.get("UV"), errors="coerce")
+        df_sheet["solar_radiation_wm2"] = df_sheet.get("Solar").apply(parse_wu_value) if "Solar" in df_sheet.columns else np.nan
 
-        # Métadonnées station
         df_sheet["source"] = "weather_underground"
         df_sheet["station_id"] = station_id
         df_sheet["station_name"] = meta["station_name"]
@@ -349,13 +377,11 @@ def parse_weather_underground(filepath: str | Path, station_id: str) -> pd.DataF
         df_sheet["elevation"] = meta["elevation"]
         df_sheet["station_type"] = meta["station_type"]
 
-        # Champs non dispo WU
         df_sheet["visibility_m"] = None
         df_sheet["cloud_cover_octas"] = None
         df_sheet["snow_depth_cm"] = None
         df_sheet["weather_code"] = None
 
-        # Sélection finale
         missing_cols = [c for c in TARGET_COLUMNS if c not in df_sheet.columns]
         if missing_cols:
             raise KeyError(f"Colonnes manquantes dans WU ({sheet_name}): {missing_cols}")
@@ -423,36 +449,45 @@ def validate_dataframe(df: pd.DataFrame) -> dict:
 
 
 # ============================================================
-# EXPORT JSONL (recommandé ingestion)
+# EXPORT JSONL (strict JSON, NaN/Inf -> null)
 # ============================================================
 def export_jsonl(df: pd.DataFrame, output_path: str | Path) -> None:
     """
     Exporte 1 document par ligne (JSONL).
-    Convertit NaN -> null, timestamp -> ISO string.
+    Garantit JSON strict:
+      - NaN/Inf -> null
+      - timestamp -> ISO string
+      - json.dumps(..., allow_nan=False)
     """
     out = Path(output_path)
     out.parent.mkdir(parents=True, exist_ok=True)
 
     df_out = df.copy()
-    df_out = df_out.where(pd.notna(df_out), None)
+
+    # timestamp -> datetime puis ISO string
+    df_out["timestamp"] = pd.to_datetime(df_out["timestamp"], errors="coerce")
 
     def ts_to_iso(x):
         if x is None or pd.isna(x):
             return None
-        if isinstance(x, str):
-            return x
         try:
-            return x.isoformat()
+            return x.to_pydatetime().isoformat() if hasattr(x, "to_pydatetime") else x.isoformat()
         except Exception:
-            return str(x)
+            return None
 
     df_out["timestamp"] = df_out["timestamp"].apply(ts_to_iso)
 
+    # Remplacement large NaN/Inf -> None
+    df_out = df_out.replace([np.nan, np.inf, -np.inf], None)
+
+    written = 0
     with out.open("w", encoding="utf-8") as f:
         for rec in df_out.to_dict(orient="records"):
-            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+            rec = sanitize_for_json(rec)
+            f.write(json.dumps(rec, ensure_ascii=False, allow_nan=False) + "\n")
+            written += 1
 
-    logger.info(f"Export JSONL: {len(df_out)} documents → {out}")
+    logger.info(f"Export JSONL: {written} documents → {out}")
 
 
 # ============================================================
