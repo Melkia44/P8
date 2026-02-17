@@ -1,0 +1,84 @@
+# =============================================================
+# Docker Compose — Pipeline ETL Forecast 2.0
+#
+# Services :
+#   mongodb        → MongoDB 7.0 avec Replica Set + volume persistant
+#   mongo-init-rs  → Initialise le RS (run once)
+#   etl            → Transform + Load (tes scripts inchangés)
+#
+# Prérequis :
+#   Placer les fichiers sources dans ./data/ :
+#     - Data_Source1_011024-071024.json
+#     - Ichtegem_BE.xlsx
+#     - La_Madeleine_FR.xlsx
+#
+# Usage :
+#   docker compose up --build
+#
+# Vérification :
+#   docker exec -it mongodb_weather mongosh
+#   > use weather_db
+#   > db.weather_data.countDocuments()
+#   > rs.status()
+# =============================================================
+
+services:
+  # ---- MongoDB avec Replica Set ----
+  mongodb:
+    image: mongo:7.0
+    container_name: mongodb_weather
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ---- Init Replica Set (run once) ----
+  mongo-init-rs:
+    image: mongo:7.0
+    container_name: mongo_init_rs
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    restart: "no"
+    entrypoint: >
+      mongosh --host mongodb --eval '
+        try {
+          rs.status();
+          print("Replica set déjà initialisé");
+        } catch(e) {
+          rs.initiate({ _id: "rs0", members: [{ _id: 0, host: "mongodb:27017" }] });
+          print("Replica set initialisé");
+        }
+      '
+
+  # ---- ETL : Transform + Load MongoDB ----
+  etl:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: etl_weather
+    depends_on:
+      mongo-init-rs:
+        condition: service_completed_successfully
+    volumes:
+      - ./data:/app/data:ro
+      - ./output:/app/output
+    environment:
+      - DATA_ROOT=/app/data
+      - OUTPUT_DIR=/app/output
+      - MONGO_URI=mongodb://mongodb:27017/?replicaSet=rs0
+      - DB_NAME=weather_db
+      - COLLECTION_NAME=weather_data
+      - RESET_COLLECTION=true
+      - FORCE_DIRECT_CONNECTION=false
+    restart: "no"
+
+volumes:
+  mongodb_data:
