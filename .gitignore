@@ -1,13 +1,24 @@
-output/
+# =========================
+# Python
+# =========================
 .venv/
 __pycache__/
 *.pyc
 .env
-# Ignore tout data
-data/*
 
-# Mais garde le dossier airbyte
-!data/airbyte/
+# =========================
+# Data (raw / generated)
+# =========================
+data/
+output/
+03_Docker/output/
 
-# Et garde son contenu
-!data/airbyte/**
+# =========================
+# Generated reports
+# =========================
+02_Chargement_DB/*.json
+
+# =========================
+# OS
+# =========================
+.DS_Store
