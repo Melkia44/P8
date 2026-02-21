@@ -1,0 +1,77 @@
+{
+  "run_timestamp_utc": "2026-02-17T10:37:42.906169+00:00",
+  "config": {
+    "mongo_uri": "mongodb://localhost:27018/?directConnection=true",
+    "db_name": "weather_db",
+    "collection_name": "weather_data",
+    "input_path": "/home/melkia/P8/data/airbyte/weather_data.jsonl",
+    "report_path": "/home/melkia/P8/02_Chargement_DB/mongodb_report.json",
+    "batch_size": 500,
+    "reset_collection": true,
+    "force_direct_connection": false
+  },
+  "import": {
+    "batch_size": 500,
+    "total_lines": 4950,
+    "total_parsed": 4950,
+    "total_submitted": 4950,
+    "total_inserted": 4950,
+    "total_errors": 0,
+    "error_types": {},
+    "errors_sample": [],
+    "parse_errors_sample": [],
+    "insertion_time_s": 0.14
+  },
+  "quality": {
+    "total_documents": 4950,
+    "schema_conformity_rate_pct": 100.0,
+    "missing_required_fields": {},
+    "null_rates_pct": {
+      "temperature_c": 0.0,
+      "dew_point_c": 0.0,
+      "humidity_pct": 0.0,
+      "wind_direction_deg": 1.78,
+      "wind_speed_kmh": 0.0,
+      "wind_gust_kmh": 21.88,
+      "pressure_hpa": 0.0,
+      "precip_rate_mm": 18.18,
+      "precip_accum_mm": 21.25,
+      "visibility_m": 98.79,
+      "cloud_cover_octas": 99.49,
+      "snow_depth_cm": 100.0,
+      "weather_code": 99.82,
+      "uv_index": 23.09,
+      "solar_radiation_wm2": 23.09
+    },
+    "by_source": {
+      "infoclimat": 1143,
+      "weather_underground": 3807
+    },
+    "date_range": {
+      "min": "2024-10-01 00:04:00",
+      "max": "2024-10-07 14:59:00"
+    }
+  },
+  "access_times": {
+    "count_total": {
+      "description": "Compter tous les documents",
+      "time_ms": 1.78,
+      "result_count": 4950
+    },
+    "latest_10_records": {
+      "description": "10 derniers enregistrements station WU (IICHTE19)",
+      "time_ms": 0.76,
+      "result_count": 10
+    }
+  },
+  "replication": {
+    "status": "ok",
+    "replica_set_name": "rs0",
+    "members": [
+      {
+        "name": "mongodb:27017",
+        "state": "PRIMARY"
+      }
+    ]
+  }
+}
