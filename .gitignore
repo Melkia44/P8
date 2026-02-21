@@ -1,27 +1,21 @@
-# =========================
+cat > .gitignore << 'EOF'
+# Data / outputs (ne pas versionner)
+data/
+**/*.xlsx
+**/*.jsonl
+**/weather_data*.json
+**/*quality*.json
+
+# Airbyte local
+.airbyte/
+**/airbyte/
+
 # Python
-# =========================
-.venv/
 __pycache__/
 *.pyc
+.venv/
+.venv*/
+
+# Secrets
 .env
-
-# =========================
-# Data (raw / generated)
-# =========================
-data/
-output/
-03_Docker/output/
-
-# =========================
-# Generated reports
-# =========================
-02_Chargement_DB/*.json
-
-# =========================
-# OS
-# =========================
-.DS_Store
-
-# Generated outputs (Step 01)
-01_Recuperation_et_Transformation_Donnees/weather_data*.json
+EOF
