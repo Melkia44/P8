@@ -1,0 +1,23 @@
+# Requirements Python - Projet Forecast 2.0
+# Master 2 Data Engineering
+# Version: 1.0
+
+# AWS SDK
+boto3==1.35.89
+botocore==1.35.89
+
+# Data processing
+pandas==2.2.3
+numpy==2.2.1
+
+# Excel support
+openpyxl==3.1.5
+
+# MongoDB driver
+pymongo==4.10.1
+
+# Environment variables
+python-dotenv==1.0.1
+
+# Date/time utilities (already in stdlib but explicit version)
+python-dateutil==2.8.2
