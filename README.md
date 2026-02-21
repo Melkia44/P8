@@ -1,205 +1,311 @@
-Projet P8 – Pipeline Data Engineering & MongoDB
-Objectif
+# 🌦️ Forecast 2.0 - Livrables Projet P8
 
-Concevoir et mettre en œuvre un pipeline complet de traitement de données météorologiques multi-sources, depuis l’ingestion jusqu’au stockage sécurisé dans une base MongoDB conteneurisée, avec normalisation, contrôles qualité et validation de schéma côté base.
+**Auteur :** Mathieu Lowagie  
+**Formation :** Master 2 Data Engineering - OpenClassrooms  
+**Projet :** Construisez et testez une infrastructure de données  
+**Date :** Février 2026
 
-Le projet couvre :
+---
 
-ingestion de données hétérogènes (Excel, JSON),
-normalisation dans un schéma commun,
-contrôles qualité pré-migration,
-migration sécurisée vers MongoDB,
-validation de schéma et intégrité des données,
-mesure de la qualité post-migration,
-démonstration des opérations CRUD.
-Architecture du pipeline
+## 📦 Contenu des livrables
 
-Step 1 – Récupération & transformation des données
+```
+livrables_p8/
+├── README.md (ce fichier)
+├── docs/
+│   ├── SCHEMA_BDD.md           # Schéma MongoDB détaillé
+│   ├── LOGIGRAMME.md           # Processus ETL complet
+│   └── ARCHITECTURE_AWS.md      # Infrastructure AWS déployée
+└── scripts/
+    ├── transform_s3_corrected.py   # Script transformation S3
+    ├── load_mongodb_s3_final.py     # Script chargement MongoDB
+    └── requirements.txt             # Dépendances Python
+```
 
-Collecte de données issues de plusieurs sources météo.
-Normalisation dans un modèle cible commun.
-Génération de fichiers propres (JSON, JSONL).
-Calcul d’un rapport de qualité pré-migration.
+---
 
-Step 2 – Migration & sécurisation MongoDB
+## 🎯 Résumé du projet
 
-Déploiement d’une instance MongoDB via Docker Compose.
-Création des collections et index.
-Application de validateurs de schéma MongoDB ($jsonSchema).
-Migration contrôlée des données via scripts Python.
+### Objectif
 
-Step 3 – Conteneurisation
+Construire un pipeline ETL cloud-native pour collecter, transformer et stocker des données météorologiques multi-sources destinées à alimenter des modèles de prévision de demande énergétique.
 
-Exécution du pipeline dans un environnement Docker.
-Séparation claire entre exécution locale et conteneurisée.
+### Résultats obtenus
 
-Step 4 – Déploiement cloud
+✅ **3807 records** météorologiques chargés  
+✅ **2 stations** Weather Underground (BE + FR)  
+✅ **7 mois** de données (Jan-Jul 2024)  
+✅ **0 erreur** d'insertion  
+✅ **13ms** de latence d'accès  
+✅ **100%** de qualité des données
 
-Utilisation d’AWS S3 comme zone de staging des données issues d’Airbyte.
+---
 
-Rôle d’Airbyte
+## 🏗️ Architecture déployée
 
-Airbyte est utilisé pour l’extraction et le chargement des données sources vers une zone de staging (AWS S3).
-Les étapes de transformation, de contrôle qualité et de migration MongoDB sont volontairement réalisées hors Airbyte afin de :
-maîtriser les règles métier,
-centraliser la logique de qualité des données,
-garantir la cohérence des données avant insertion en base.
+### Composants AWS
 
-Arborescence du projet
-P8/
-├── .venv/
-│
-├── 01_Recuperation_et_Transformation_Donnees/
-│   ├── main.py                     # Orchestration collecte + normalisation
-│   ├── stations.py                # Traitement des stations météo
-│   ├── quality_checks.py           # Contrôles qualité pré-migration
-│   ├── utils.py                    # Fonctions utilitaires
-│
-├── 02_Migration_et_Securisation_MongoDB/
-│   ├── __init__.py
-│   ├── 01_provision_mongo.py       # Création collections, schémas, index
-│   ├── 02_migrate_to_mongo.py      # Migration + qualité post-migration + CRUD
-│   └── 03_rejections.py            # Analyse des documents rejetés
-│
-├── 03_Containerisation_Docker/
-│   ├── docker-compose.yml          # MongoDB
-│   ├── Dockerfile                  # Image Python pipeline
-│   ├── main.py                     # Exécution pipeline conteneurisée
-│   └── requirements.txt
-│
-├── 04_Deploiement_AWS/
-│
-├── data/
-│   ├── airbyte/
-│   │   └── docker-compose.yaml     # Stack Airbyte locale
-│   ├── excel/
-│   │   ├── Weather_Ichtegem_BE.xlsx
-│   │   └── Weather_La_Madeleine_FR.xlsx
-│   └── json/
-│       └── Data_Source1_011024-071024.json
-│
-├── output/
-│   ├── 01_local_processing/        # Données clean pré-migration
-│   └── 02_local_processing/        # Données post-migration & rapports qualité
-│
-├── .env
-├── .gitignore
-├── requirements.txt
-└── README.md
+| Composant | Configuration | État |
+|-----------|--------------|------|
+| **MongoDB ECS** | Fargate 0.5vCPU, 1GB | ✅ RUNNING |
+| **EFS Storage** | 6GB General Purpose | ✅ Persistant |
+| **S3 Bucket** | oc-meteo-staging-data | ✅ Actif |
+| **Security Group** | mongodb-forecast-sg | ✅ Configuré |
+| **CloudWatch Logs** | /ecs/mongodb-forecast | ✅ Actif |
 
-Prérequis
+### Pipeline ETL
 
-Python 3.10+
-Docker & Docker Compose
-Accès AWS S3
-Ports MongoDB disponibles localement
+```
+[Sources locales]
+    ↓ Airbyte
+[S3 raw/] (15 fichiers JSONL)
+    ↓ transform_s3.py
+[S3 Transform/] (weather_data.jsonl)
+    ↓ load_mongodb_s3.py
+[MongoDB AWS ECS] (3807 documents)
+```
 
+---
 
-Configuration (.env)
-# AWS / S3
-S3_BUCKET=oc-meteo-staging-data
-S3_PREFIX_RAW=raw/dataset_meteo/
-S3_PREFIX_OUT=processed/dataset_meteo/
+## 📋 Livrables OpenClassrooms
 
-# MongoDB
-MONGO_URI=mongodb://localhost:27017
-MONGO_DB=meteo
+### 1. Schéma de la base de données ✅
 
-Démarrage rapide
-# Démarrage MongoDB
-docker compose -f 03_Containerisation_Docker/docker-compose.yml up -d
+**Fichier :** `docs/SCHEMA_BDD.md`
 
-# Transformation & qualité pré-migration
-python3 01_Recuperation_et_Transformation_Donnees/main.py
+**Contenu :**
+- Structure complète de la collection MongoDB
+- 23 champs détaillés
+- 3 index (dont 1 unique)
+- JSON Schema validation
+- Exemples de documents
 
-# Provisioning MongoDB
-python3 02_Migration_et_Securisation_MongoDB/01_provision_mongo.py
+### 2. Logigramme du processus ✅
 
-# Migration + qualité post-migration + CRUD
-python3 02_Migration_et_Securisation_MongoDB/02_migrate_to_mongo.py
+**Fichier :** `docs/LOGIGRAMME.md`
 
+**Contenu :**
+- Flow chart complet du pipeline ETL
+- 4 phases : Extraction → Transformation → Chargement → Tests
+- Points de décision
+- Gestion des erreurs
+- Temps d'exécution
 
-Le pipeline est idempotent et peut être relancé sans effet de bord.
+### 3. Architecture de la base de données ✅
 
-Provisioning MongoDB
+**Fichier :** `docs/ARCHITECTURE_AWS.md`
 
-Le script 01_provision_mongo.py :
+**Contenu :**
+- Diagramme d'infrastructure AWS
+- VPC, Security Groups, ECS, EFS, S3
+- Configuration détaillée de chaque composant
+- Sécurité et haute disponibilité
+- Coûts estimés
 
-crée les collections stations et observations,
-applique des validateurs de schéma MongoDB ($jsonSchema),
-crée les index suivants :
-unicité sur station_id,
-unicité sur record_hash,
-index temporels et fonctionnels.
+### 4. Installation fonctionnelle d'Airbyte ✅
 
-Les contraintes sont appliquées côté base afin de garantir l’intégrité des données.
+**Réalisé :**
+- Airbyte local déployé (Docker Compose)
+- 3 connexions configurées :
+  - InfoClimat JSON → S3
+  - WU Belgique XLSX → S3
+  - WU France XLSX → S3
+- 15 fichiers JSONL générés
 
-Migration & qualité post-migration
+### 5. Scripts de transformation ✅
 
-Le script 02_migrate_to_mongo.py :
+**Fichier :** `scripts/transform_s3.py`
 
-importe les données propres depuis les fichiers générés,
-convertit les champs temporels (datetime),
-applique des upserts basés sur des clés d’unicité,
-rejette automatiquement les documents non conformes,
-génère un rapport de qualité post-migration,
-démontre les opérations CRUD via script Python.
-Qualité des données
-Qualité pré-migration
-vérification des types,
-champs obligatoires,
-doublons,
-valeurs manquantes.
+**Fonctionnalités :**
+- Lit raw/ depuis S3
+- Détecte type de source (IC/WU)
+- Unifie formats
+- Convertit unités (F°→C°, mph→km/h, etc.)
+- Reconstruit timestamps
+- Déduplique
+- Valide qualité
+- Écrit Transform/ sur S3
 
-Un rapport est généré dans output/01_local_processing.
+### 6. Script de chargement MongoDB ✅
 
-Qualité post-migration
+**Fichier :** `scripts/load_mongodb_s3.py`
 
-Un rapport est généré automatiquement :
+**Fonctionnalités :**
+- Lit Transform/ depuis S3
+- Configure collection + validation
+- Crée index
+- Bulk insert (batch 500)
+- Gère doublons
+- Rapport qualité
 
-output/02_local_processing/quality_post_mongo.json
+### 7. Reporting qualité des données ✅
 
-Il contient :
+**Métriques mesurées :**
 
-nombre total de documents traités,
-documents insérés,
-documents rejetés,
-taux d’erreur post-migration.
+| Métrique | Valeur |
+|----------|--------|
+| Temps d'accessibilité | 13.24 ms |
+| Taux d'erreurs | 0% (0/3807) |
+| Taux de documents valides | 100% |
+| Doublons | 0 |
 
-Les rejets correspondent à des mécanismes de validation MongoDB et non à des incohérences métier.
+**Rapport généré :** `Transform/weather_data.quality.json`
 
-Opérations CRUD
+### 8. Tests d'infrastructure ✅
 
-Le script de migration inclut une démonstration complète :
-Create
-Read
-Update
-Delete
+**Tests réalisés :**
+- ✅ Test connexion MongoDB
+- ✅ Test CRUD complet
+- ✅ Test performance (latence)
+- ✅ Test persistance EFS
+- ✅ Validation schéma
 
-Toutes les opérations sont réalisées via script Python.
+**Résultats :** 100% de réussite
 
-Choix de conception
+### 9. Monitoring ✅
 
-Pipeline multi-sources avec normalisation centralisée.
-Validation de la qualité côté base MongoDB.
-Séparation claire des responsabilités.
-Pipeline idempotent et relançable.
-Déploiement MongoDB conteneurisé pour reproductibilité.
-Architecture compatible industrialisation.
+**CloudWatch configuré :**
+- Log group : `/ecs/mongodb-forecast`
+- Container Insights activé
+- Métriques : CPU, Memory, Network
 
-Logigramme du pipeline
+---
 
-Diagramme Mermaid :
-https://mermaid.ai/d/19e27a95-edb3-48dd-8376-31d66ff93959
+## 🔧 Transformations de données
 
-flowchart TD
-    A[Sources météo<br/>Excel / JSON] --> B[Transformation Python]
-    B --> C[Qualité pré-migration]
-    B --> D[Fichiers clean]
+### Conversions d'unités
 
-    E[MongoDB Docker] --> F[Provisioning]
-    F --> G[Schémas & index]
+| Mesure | Source (WU) | Cible | Formule |
+|--------|-------------|-------|---------|
+| Température | °F | °C | `(F-32)×5/9` |
+| Vent | mph | km/h | `mph×1.60934` |
+| Pression | inHg | hPa | `inHg×33.8639` |
+| Précip. | inches | mm | `in×25.4` |
+| Direction vent | Texte | Degrés | Mapping |
 
-    D --> H[Migration MongoDB]
-    H --> I[Qualité post-migration]
-    H --> J[CRUD]
+### Reconstruction timestamps
+
+**Problème :** Excel contient `"12:04 AM"` sans date  
+**Solution :** Extraction date depuis chemin S3
+
+```
+raw/BE/011024/ → Date: 2024-10-01
+Time: "12:04 AM" → Heure: 00:04
+Résultat: 2024-10-01T00:04:00
+```
+
+### Schéma unifié
+
+**23 colonnes standardisées :**
+- Métadonnées station (6 champs)
+- Horodatage (1 champ)
+- Température/Humidité (3 champs)
+- Vent (3 champs)
+- Pression/Précip (3 champs)
+- Visibilité/Nébulosité (3 champs)
+- Codes météo (1 champ)
+- UV/Radiation (2 champs)
+
+---
+
+## ⚡ Performance
+
+### Infrastructure
+
+| Ressource | Spécification | Performance |
+|-----------|--------------|-------------|
+| MongoDB | 0.5 vCPU, 1GB | CPU: 15-20%, RAM: 29% |
+| EFS | General Purpose | Latence: <1ms |
+| S3 | Standard | Transfer: ~100KB/s |
+| Réseau | VPC eu-west-3 | 13ms latence |
+
+### Pipeline ETL
+
+| Phase | Durée | Records/sec |
+|-------|-------|-------------|
+| Transformation | 2-3s | ~1500 |
+| Chargement | 1.1s | ~3461 |
+| **Total** | **~5s** | **~760** |
+
+---
+
+## 🚀 Instructions d'exécution
+
+### Prérequis
+
+```bash
+# Python 3.11+
+python3 --version
+
+# AWS CLI configuré
+aws configure
+
+# Install dépendances
+pip install -r scripts/requirements.txt --break-system-packages
+```
+
+### Transformation
+
+```bash
+export BUCKET_NAME=oc-meteo-staging-data
+export AWS_REGION=eu-west-3
+python3 scripts/transform_s3_corrected.py
+```
+
+### Chargement
+
+```bash
+export MONGO_URI=mongodb://admin:***@51.44.220.64:27017/
+python3 scripts/load_mongodb_s3_final.py
+```
+
+---
+
+## 📊 Justifications techniques
+
+### Choix MongoDB (NoSQL)
+
+✅ **Schéma flexible** - Ajout facile de nouvelles sources  
+✅ **Performance lecture** - Index optimisés time-series  
+✅ **Scalabilité horizontale** - Sharding possible
+
+### Choix ECS Fargate (vs EC2)
+
+✅ **Serverless** - Pas de gestion serveurs  
+✅ **Auto-scaling** - S'adapte à la charge  
+✅ **Économique** - Pay-per-use (~21€/mois)
+
+### Choix S3 staging
+
+✅ **Découplage** - Extract/Transform/Load séparés  
+✅ **Traçabilité** - Données brutes conservées  
+✅ **Reprise** - Rejouer transformation si erreur
+
+---
+
+## 🔐 Sécurité
+
+✅ **Network** - Security Groups restrictifs  
+✅ **Data at rest** - EFS + S3 chiffrés  
+✅ **Authentication** - MongoDB avec credentials  
+✅ **IAM Roles** - Pas de credentials hardcodés
+
+---
+
+## 📚 Documentation complète
+
+### Fichiers détaillés
+
+1. **SCHEMA_BDD.md** - Structure MongoDB complète
+2. **LOGIGRAMME.md** - Processus ETL détaillé
+3. **ARCHITECTURE_AWS.md** - Infrastructure déployée
+
+### Scripts Python
+
+1. **transform_s3_corrected.py** - ETL transformation
+2. **load_mongodb_s3_final.py** - Chargement MongoDB
+
+---
+
+**Version finale :** 1.0  
+**Date de livraison :** 21 février 2026
