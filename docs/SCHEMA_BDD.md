@@ -217,19 +217,23 @@ Collection: weather_data
 
 | Métrique | Valeur |
 |----------|--------|
-| Documents totaux | 3807 |
+| Documents totaux | 4950 |
 | Taille moyenne document | ~500 bytes |
-| Taille collection | ~2 MB |
+| Taille collection | ~2.5 MB |
 | Index count | 3 |
-| Index size | ~150 KB |
+| Index size | ~200 KB |
 
 ### Répartition par source
-- `weather_underground` : 3807 documents (100%)
-- `infoclimat` : 0 documents (données non chargées dans ce run)
+- `weather_underground` : 3807 documents (76.9%)
+- `infoclimat` : 1143 documents (23.1%)
 
 ### Répartition par station
-- `IICHTE19` (Belgique) : 1899 documents (49.9%)
-- `ILAMAD25` (France) : 1908 documents (50.1%)
+- `IICHTE19` (Belgique, WU) : 1899 documents (38.4%)
+- `ILAMAD25` (France, WU) : 1908 documents (38.5%)
+- `07015` (InfoClimat) : 60 documents (1.2%)
+- `00052` (InfoClimat) : 361 documents (7.3%)
+- `000R5` (InfoClimat) : 361 documents (7.3%)
+- `STATIC0010` (InfoClimat) : 361 documents (7.3%)
 
 ### Période couverte
 - **Début :** 2024-01-01 00:04:00
