@@ -12,7 +12,6 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-# Ajouter le dossier parent au path pour importer transform.py
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "01_Recuperation_et_Transformation_Donnees"))
 from transform import (
     fahrenheit_to_celsius,
@@ -25,9 +24,6 @@ from transform import (
 )
 
 
-# ============================================================
-# TEST CONVERSIONS D'UNITES
-# ============================================================
 class TestFahrenheitToCelsius:
     def test_point_congelation(self):
         assert fahrenheit_to_celsius(32.0) == 0.0
@@ -72,9 +68,6 @@ class TestInchesToMm:
         assert inches_to_mm(0.0) == 0.0
 
 
-# ============================================================
-# TEST PARSING WEATHER UNDERGROUND
-# ============================================================
 class TestParseWuValue:
     def test_valeur_numerique(self):
         assert parse_wu_value(57.7) == 57.7
@@ -127,9 +120,6 @@ class TestWindTextToDegrees:
         assert math.isnan(wind_text_to_degrees("Unknown"))
 
 
-# ============================================================
-# TEST SANITIZE JSON
-# ============================================================
 class TestSanitizeForJson:
     def test_nan_to_none(self):
         assert sanitize_for_json(float("nan")) is None
@@ -161,9 +151,6 @@ class TestSanitizeForJson:
         assert sanitize_for_json(np.float64(3.14)) == 3.14
 
 
-# ============================================================
-# TEST SCHEMA UNIFIE
-# ============================================================
 class TestSchemaUnifie:
     def test_nombre_colonnes(self):
         from transform import TARGET_COLUMNS

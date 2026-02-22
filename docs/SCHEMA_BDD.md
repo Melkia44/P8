@@ -1,9 +1,9 @@
 # 🗄️ SCHÉMA DE BASE DE DONNÉES - MongoDB
 
-**Base :** `weather_db`  
-**Collection :** `weather_data`  
-**Type :** Document NoSQL (MongoDB 7)  
-**Documents totaux :** 3807
+**Base :** `weather_db`
+**Collection :** `weather_data`
+**Type :** Document NoSQL (MongoDB 7)
+**Documents totaux :** 4950 (3807 WU + 1143 InfoClimat)
 
 ---
 
@@ -167,8 +167,8 @@ Collection: weather_data
 }
 ```
 
-**Niveau de validation :** `moderate`  
-**Action en cas d'échec :** `warn` (log + insertion quand même)
+**Niveau de validation :** `strict`
+**Action en cas d'échec :** `error` (rejet du document non conforme)
 
 ---
 
@@ -308,5 +308,4 @@ db.weather_data.find({
 ---
 
 **Version :** 1.0  
-**Auteur :** Mathieu Melkia  
 **Date :** 21 février 2026
