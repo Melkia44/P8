@@ -236,9 +236,9 @@ Collection: weather_data
 - `STATIC0010` (InfoClimat) : 361 documents (7.3%)
 
 ### Période couverte
-- **Début :** 2024-01-01 00:04:00
-- **Fin :** 2024-07-10 14:59:00
-- **Durée :** 191 jours (~6.4 mois)
+- **Début :** 2024-01-10 00:04:00
+- **Fin :** 2024-10-07 12:00:00
+- **Durée :** ~271 jours (~9 mois)
 
 ---
 
@@ -311,5 +311,5 @@ db.weather_data.find({
 
 ---
 
-**Version :** 1.0  
-**Date :** 21 février 2026
+**Version :** 1.1
+**Date :** 1 mars 2026

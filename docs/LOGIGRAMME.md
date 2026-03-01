@@ -139,7 +139,7 @@
 │  ┌───────────────────────────────────┐ │
 │  │ 2.4 Déduplication                │ │
 │  │     Sur: (station_id, timestamp)  │ │
-│  │     3807 → 3807 (0 doublon)      │ │
+│  │     4950 → 4950 (0 doublon)      │ │
 │  └───────────────────────────────────┘ │
 │         │                               │
 │         ▼                               │
@@ -170,7 +170,7 @@
 ┌─────────────────────────────────────────┐
 │ STOCKAGE INTERMÉDIAIRE : S3 Transform/  │
 │                                          │
-│   • weather_data.jsonl (3807 records)   │
+│   • weather_data.jsonl (4950 records)   │
 │   • Schéma unifié (23 colonnes)         │
 │   • Unités métriques                    │
 └────────┬────────────────────────────────┘
@@ -181,7 +181,7 @@
 │                                          │
 │  ┌───────────────────────────────────┐ │
 │  │ 3.1 Connexion MongoDB AWS        │ │
-│  │     mongodb://51.44.220.64:27017 │ │
+│  │     mongodb://<ECS_PUBLIC_IP>:27017 │ │
 │  └───────────────────────────────────┘ │
 │         │                               │
 │         ▼                               │
@@ -194,7 +194,7 @@
 │  │ 3.3 Configuration collection     │ │
 │  │     • Créer si n'existe pas      │ │
 │  │     • JSON Schema validation     │ │
-│  │     • Validation level: moderate │ │
+│  │     • Validation level: strict   │ │
 │  └───────────────────────────────────┘ │
 │         │                               │
 │         ▼                               │
@@ -234,7 +234,7 @@
 │                                          │
 │  Base: weather_db                        │
 │  Collection: weather_data                │
-│  Documents: 3807                         │
+│  Documents: 4950                         │
 │  Index: 3                                │
 └────────┬────────────────────────────────┘
          │
@@ -282,7 +282,7 @@
 ┌─────────────────┐
 │  RAPPORT FINAL   │
 │                  │
-│  • 3807 records  │
+│  • 4950 records  │
 │  • 0 erreur      │
 │  • 13ms latence  │
 │  • 100% qualité  │
@@ -369,5 +369,5 @@ Lors du bulk insert:
 
 ---
 
-**Version :** 1.0  
-**Date :** 21 février 2026
+**Version :** 1.1
+**Date :** 1 mars 2026

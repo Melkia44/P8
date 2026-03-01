@@ -43,7 +43,7 @@
 │  │  │   │   └─ Memory: 1 GB (1024 MB)                  │  │   │   │
 │  │  │   │                                                │  │   │   │
 │  │  │   │   Network:                                    │  │   │   │
-│  │  │   │   ├─ Public IP: 51.44.220.64                 │  │   │   │
+│  │  │   │   ├─ Public IP: <ECS_PUBLIC_IP>               │  │   │   │
 │  │  │   │   ├─ Private IP: 172.31.x.x                  │  │   │   │
 │  │  │   │   └─ Security Group: mongodb-forecast-sg     │  │   │   │
 │  │  │   │                                                │  │   │   │
@@ -132,7 +132,7 @@
 │  │   │       └── 2026_02_20_xxx.jsonl (InfoClimat)          │     │ 
 │  │   │                                                      │     │
 │  │   └── Transform/                                         │     │
-│  │       ├── weather_data.jsonl (3807 records, ~1.5 MB)     │     │
+│  │       ├── weather_data.jsonl (4950 records, ~2.0 MB)     │     │
 │  │       └── weather_data.quality.json (2 KB)               │     │ 
 │  └──────────────────────────────────────────────────────────┘     │
 │                                                                   │
@@ -166,6 +166,8 @@
 │                                                                   │
 └───────────────────────────────────────────────────────────────────┘
 ```
+
+> ⚠️ **Note :** L'IP publique de la Task ECS est dynamique et change à chaque redéploiement. Utiliser `aws ecs describe-tasks` pour obtenir l'IP courante.
 
 ---
 
@@ -374,7 +376,7 @@ MONGO_INITDB_ROOT_PASSWORD=<defini dans AWS Task Definition>
 
 ✅ **MongoDB Replica Set (3 nodes)**
 ```
-Primary (51.44.220.64) ──┐
+Primary (<ECS_PUBLIC_IP>) ──┐
 Secondary (IP2)          ├─ Replica Set
 Secondary (IP3)          ┘
 ```
@@ -429,5 +431,5 @@ CloudWatch > Log groups > /ecs/mongodb-forecast
 ---
 
   
-**Version :** 1.0  
-**Date :** 21 février 2026
+**Version :** 1.1
+**Date :** 1 mars 2026
