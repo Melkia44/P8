@@ -1,35 +1,58 @@
-# Projet P8 – Forecast 2.0 | Pipeline Data Engineering & MongoDB sur AWS
+<div align="center">
 
-## Objectif
+# 🌦️☁️ Forecast 2.0 — Pipeline ETL multi-sources sur AWS
 
-Concevoir et déployer un pipeline ETL complet de traitement de données météorologiques multi-sources pour **GreenAndCoop**, coopérative énergétique française. Le pipeline collecte, normalise, contrôle et charge les données dans une base **MongoDB hébergée sur AWS ECS Fargate**, prête à alimenter des modèles de prévision de demande énergétique.
+### Ingestion, normalisation, contrôle qualité et chargement de données météorologiques vers MongoDB hébergé sur AWS ECS Fargate
 
-Le projet couvre l'ensemble du cycle data engineering :
+[![Python](https://img.shields.io/badge/Python-3.10+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![MongoDB](https://img.shields.io/badge/MongoDB-7.0-47A248?logo=mongodb&logoColor=white)](https://www.mongodb.com/)
+[![Airbyte](https://img.shields.io/badge/Airbyte-Ingestion-615EFF?logo=airbyte&logoColor=white)](https://airbyte.com/)
+[![AWS](https://img.shields.io/badge/AWS-ECS_Fargate_+_S3_+_EFS-FF9900?logo=amazon-aws&logoColor=white)](https://aws.amazon.com/)
+[![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
+[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-- Ingestion de données hétérogènes (JSON API, Excel) depuis 6 stations météo
-- Normalisation dans un schéma commun unifié
-- Contrôles qualité pré et post-migration
-- Migration sécurisée vers MongoDB avec validation de schéma
-- Conteneurisation Docker pour reproductibilité
-- Déploiement cloud sur AWS (S3, ECS Fargate, EFS)
+**[Contexte](#-contexte-business)** • **[Architecture](#%EF%B8%8F-architecture-du-pipeline)** • **[Stack](#%EF%B8%8F-stack-technique)** • **[Démarrage](#-démarrage-rapide)** • **[Choix de conception](#-choix-de-conception)** • **[Métriques](#-métriques-de-performance)**
 
-## Architecture du pipeline
+</div>
+
+---
+
+## 📋 Contexte business
+
+**GreenAndCoop** est une coopérative énergétique française qui alimente ses modèles de prévision de demande à partir de données météorologiques multi-sources. Ces données proviennent de fournisseurs hétérogènes (formats JSON et Excel), de plusieurs stations situées en France et en Belgique, et doivent être unifiées dans un schéma commun puis chargées dans une base **MongoDB hébergée sur AWS** pour alimenter les modèles ML aval.
+
+L'enjeu : concevoir un pipeline **production-ready** capable d'ingérer ces données, de les normaliser dans un schéma commun, de garantir leur qualité par des contrôles automatisés, et de les charger de façon **idempotente** dans une base MongoDB cloud — le tout reproductible via Docker et déployable sur AWS ECS Fargate.
+
+---
+
+## 🎯 Objectifs
+
+- ✅ **Ingérer** des données météorologiques depuis 2 sources hétérogènes (API JSON + Excel) couvrant 6 stations
+- ✅ **Normaliser** les données dans un schéma commun unifié
+- ✅ **Contrôler la qualité** des données pré et post-migration (doublons, valeurs manquantes, types)
+- ✅ **Charger** les données dans MongoDB avec validation de schéma côté base (`$jsonSchema`)
+- ✅ **Conteneuriser** le pipeline pour garantir la reproductibilité
+- ✅ **Déployer** sur AWS (S3 staging + ECS Fargate compute + EFS persistance)
+
+---
+
+## 🏗️ Architecture du pipeline
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │  SOURCES                                                            │
-│  ├── InfoClimat API (JSON) → 4 stations françaises                 │
-│  └── Weather Underground (Excel) → 2 stations (BE + FR)            │
+│  ├── InfoClimat API (JSON)        → 4 stations françaises          │
+│  └── Weather Underground (Excel)  → 2 stations (BE + FR)           │
 │                                                                     │
 │  INGESTION                                                          │
-│  └── Airbyte (Docker local) → AWS S3 (zone de staging)            │
+│  └── Airbyte (Docker local)        → AWS S3 (zone de staging)      │
 │                                                                     │
 │  TRANSFORMATION                                                     │
-│  └── Python (transform_s3.py) → Normalisation + qualité            │
+│  └── Python (transform_s3.py)      → Normalisation + qualité       │
 │       → weather_data.jsonl sur S3                                   │
 │                                                                     │
 │  CHARGEMENT                                                         │
-│  └── Python (load_mongodb_s3.py) → MongoDB sur ECS Fargate         │
+│  └── Python (load_mongodb_s3.py)   → MongoDB sur ECS Fargate       │
 │                                                                     │
 │  STOCKAGE                                                           │
 │  └── MongoDB 7 sur AWS ECS Fargate + EFS (persistance)             │
@@ -39,69 +62,54 @@ Le projet couvre l'ensemble du cycle data engineering :
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-## Sources de données
+**Diagramme Mermaid interactif** :
+
+```mermaid
+flowchart TD
+    A[Sources météo<br/>InfoClimat JSON + WU Excel] --> B[Airbyte]
+    B --> C[AWS S3<br/>Zone de staging]
+    C --> D[Transformation Python<br/>transform_s3.py]
+    D --> E[Qualité pré-migration]
+    D --> F[weather_data.jsonl<br/>sur S3]
+    F --> G[Chargement MongoDB<br/>load_mongodb_s3.py]
+    G --> H[(MongoDB<br/>ECS Fargate + EFS)]
+    G --> I[Qualité post-migration]
+    G --> J[Rapport & métriques]
+```
+
+---
+
+## 🛠️ Stack technique
+
+| Composant | Technologie | Rôle |
+|-----------|-------------|------|
+| **Langage** | Python 3.10+ | Pipeline ETL |
+| **Ingestion** | Airbyte (Docker local) | Extraction sources hétérogènes vers S3 |
+| **Stockage staging** | AWS S3 | Zone de staging entre étapes ETL |
+| **Compute** | AWS ECS Fargate | Hébergement MongoDB conteneurisé |
+| **Persistance** | AWS EFS | Stockage persistant pour MongoDB |
+| **Base NoSQL** | MongoDB 7 | Stockage final + validation `$jsonSchema` |
+| **Conteneurisation** | Docker + Docker Compose | Reproductibilité environnement |
+| **Monitoring** | AWS CloudWatch | Logs et métriques opérationnelles |
+| **Tests** | pytest | Tests unitaires sur transformations |
+
+---
+
+## 📊 Sources de données
 
 | Source | Format | Stations | Observations |
-|--------|--------|----------|-------------|
+| --- | --- | --- | --- |
 | InfoClimat API | JSON imbriqué | 4 (Lille-Lesquin, Armentières, Bergues, Hazebrouck) | 1 143 |
 | Weather Underground | Excel (.xlsx) | 2 (Ichtegem BE, La Madeleine FR) | 3 807 |
-| **Total** | | **6 stations** | **4 950 records** |
+| **Total** |  | **6 stations** | **4 950 records** |
 
-Période couverte : **2024-01-10 → 2024-10-07**
+**Période couverte** : 2024-01-10 → 2024-10-07
 
-## Arborescence du projet
+---
 
-```
-P8/
-├── 01_Recuperation_et_Transformation_Donnees/
-│   ├── transform.py              # Normalisation multi-sources → schéma commun
-│   ├── weather_data.json         # Données transformées
-│   └── weather_data.quality.json # Rapport qualité pré-migration
-│
-├── 02_Chargement_DB/
-│   ├── load_mongodb.py           # Migration vers MongoDB (local ou distant)
-│   └── mongodb_report.json       # Rapport qualité post-migration
-│
-├── 03_Docker/
-│   ├── docker-compose.yml        # Stack MongoDB locale
-│   ├── Dockerfile                # Image Python pipeline
-│   └── requirements.txt
-│
-├── 04_Deploiement_AWS/
-│   └── Scripts/
-│       ├── transform_s3.py       # Transformation depuis/vers S3
-│       ├── load_mongodb_s3.py    # Chargement S3 → MongoDB ECS
-│       └── test_mongodb_aws.py   # Tests de connectivité et intégrité AWS
-│
-├── 05_tests/
-│   ├── __init__.py
-│   └── test_transform.py         # Tests unitaires transformation
-│
-├── data/
-│   ├── airbyte/                  # Configuration Airbyte locale
-│   ├── Data_Source1_011024-071024.json  # Source InfoClimat brute
-│   ├── Ichtegem_BE.xlsx          # Source Weather Underground Belgique
-│   ├── infoclimat_hourly.json    # Données horaires InfoClimat
-│   └── La_Madeleine_FR.xlsx      # Source Weather Underground France
-│
-├── docs/
-│   ├── ARCHITECTURE_AWS.md       # Documentation architecture cloud
-│   ├── LOGIGRAMME.md             # Diagramme de flux du pipeline
-│   └── SCHEMA_BDD.md             # Schéma de la base de données
-│
-├── scripts/
-│   ├── run_pipeline.sh           # Orchestration complète du pipeline
-│   ├── load_mongodb_s3.py        # Script de chargement (présentation)
-│   ├── transform_s3.py           # Script de transformation (présentation)
-│   └── requirements.txt
-│
-├── .env                          # Variables d'environnement (non versionné)
-├── .gitignore
-├── README.md
-└── requirements.txt
-```
+## 🚀 Démarrage rapide
 
-## Prérequis
+### Prérequis
 
 - Python 3.10+
 - Docker & Docker Compose
@@ -109,7 +117,7 @@ P8/
 - AWS CLI configuré (`aws configure`)
 - Ports MongoDB disponibles (27017)
 
-## Configuration (.env)
+### Configuration (`.env`)
 
 ```bash
 # AWS / S3
@@ -123,8 +131,6 @@ MONGO_DB=weather_db
 # MongoDB (AWS ECS)
 # MONGO_URI=mongodb://admin:<password>@<ECS_PUBLIC_IP>:27017/
 ```
-
-## Démarrage rapide
 
 ### Exécution locale
 
@@ -148,48 +154,107 @@ bash scripts/run_pipeline.sh
 
 Le pipeline est **idempotent** et peut être relancé sans effet de bord.
 
-## Tests
+### Tests
 
 ```bash
-# Lancer les tests unitaires
+# Tests unitaires
 python3 -m pytest 05_tests/ -v
 
 # Test de connectivité MongoDB AWS
 python3 04_Deploiement_AWS/Scripts/test_mongodb_aws.py
 ```
 
-## Infrastructure AWS
+---
 
-### MongoDB sur ECS Fargate
+## 📁 Structure du projet
 
-MongoDB 7 est déployé comme service ECS Fargate avec :
+```
+Forecast-aws-airbyte-etl/
+├── 01_Recuperation_et_Transformation_Donnees/
+│   ├── transform.py                  # Normalisation multi-sources → schéma commun
+│   ├── weather_data.json             # Données transformées
+│   └── weather_data.quality.json     # Rapport qualité pré-migration
+│
+├── 02_Chargement_DB/
+│   ├── load_mongodb.py               # Migration vers MongoDB (local ou distant)
+│   └── mongodb_report.json           # Rapport qualité post-migration
+│
+├── 03_Docker/
+│   ├── docker-compose.yml            # Stack MongoDB locale
+│   ├── Dockerfile                    # Image Python pipeline
+│   └── requirements.txt
+│
+├── 04_Deploiement_AWS/
+│   └── Scripts/
+│       ├── transform_s3.py           # Transformation depuis/vers S3
+│       ├── load_mongodb_s3.py        # Chargement S3 → MongoDB ECS
+│       └── test_mongodb_aws.py       # Tests de connectivité et intégrité
+│
+├── 05_tests/
+│   └── test_transform.py             # Tests unitaires transformation
+│
+├── data/                             # Sources brutes
+├── docs/
+│   ├── ARCHITECTURE_AWS.md           # Documentation architecture cloud
+│   ├── LOGIGRAMME.md                 # Diagramme de flux du pipeline
+│   └── SCHEMA_BDD.md                 # Schéma de la base de données
+├── scripts/
+│   └── run_pipeline.sh               # Orchestration complète
+├── .gitignore
+├── README.md
+└── requirements.txt
+```
 
-- **EFS** (Elastic File System) pour la persistance des données entre redéploiements
-- **Security Groups** configurés pour l'accès MongoDB (port 27017)
-- **CloudWatch** pour le monitoring et les logs
+---
 
-### Rôle d'Airbyte
+## 🧠 Choix de conception
 
-Airbyte est utilisé pour l'extraction et le chargement des données sources vers la zone de staging S3. Les transformations, contrôles qualité et migrations MongoDB sont réalisés **hors Airbyte** afin de :
+### 1. Séparation stricte des responsabilités
 
-- Maîtriser les règles métier de normalisation
-- Centraliser la logique de qualité des données
-- Garantir la cohérence des données avant insertion en base
+- **Ingestion** (Airbyte) → uniquement extraction et chargement vers S3 staging
+- **Transformation** (Python) → règles métier de normalisation et qualité
+- **Stockage** (MongoDB) → validation finale via `$jsonSchema`
 
-## Qualité des données
+> 💡 **Pourquoi pas tout faire dans Airbyte** ? Garder les règles métier en Python permet de **maîtriser** la logique de normalisation, de la **versionner** dans le repo, et de la **tester unitairement**. Airbyte reste sur ce qu'il sait faire de mieux : extraire et charger.
 
-### Pré-migration
+### 2. Pipeline idempotent
 
-Le script `transform.py` effectue :
+Grâce aux **upserts** et aux **index uniques** (`station_id, timestamp`), le pipeline peut être **relancé sans effet de bord**. C'est une propriété critique pour la production : permet la reprise sur incident, le re-traitement de données corrigées, le déploiement bleu/vert.
+
+### 3. Validation à deux niveaux
+
+| Niveau | Outil | Garantie |
+|--------|-------|----------|
+| **Pré-insertion** | Python (`transform.py`) | Cohérence des types, détection doublons, gestion des NaN |
+| **Insertion** | MongoDB `$jsonSchema` | Refus côté base de tout document non conforme |
+
+→ Double filet de sécurité : ce qui passe le filtre Python est encore vérifié par MongoDB avant écriture.
+
+### 4. MongoDB sur ECS Fargate + EFS
+
+| Choix | Justification |
+|-------|---------------|
+| **ECS Fargate** plutôt qu'EC2 | Pas de gestion de serveur, scaling automatique, facturation à la seconde |
+| **EFS** plutôt qu'EBS | Persistance partagée entre redéploiements de container (EBS est local) |
+| **CloudWatch** pour le monitoring | Intégration native AWS, alerting facile à mettre en place |
+
+### 5. Architecture compatible industrialisation
+
+Séparation claire des étapes (`01_`, `02_`, `03_`, `04_`), logs centralisés, métriques de performance traçables, tests unitaires. Le repo peut être repris par une équipe DevOps pour CI/CD sans refonte.
+
+---
+
+## 📈 Qualité des données
+
+### Pré-migration (`transform.py`)
 
 - Vérification des types et champs obligatoires
 - Détection des doublons et valeurs manquantes
 - Rapport généré dans `weather_data.quality.json`
 
-### Post-migration
+### Post-migration (`load_mongodb.py`)
 
-Le script `load_mongodb.py` génère un rapport contenant :
-
+Rapport contenant :
 - Nombre de documents soumis, insérés, rejetés
 - Taux d'erreur post-migration
 - Répartition par source et par station
@@ -198,12 +263,14 @@ Le script `load_mongodb.py` génère un rapport contenant :
 
 - **Schema validation** (`$jsonSchema`) appliquée côté base
 - **Index uniques** sur `(station_id, timestamp)` pour empêcher les doublons
-- **Index fonctionnels** sur `source` et `timestamp` pour les requêtes
+- **Index fonctionnels** sur `source` et `timestamp` pour les requêtes analytiques
 
-## Métriques de performance
+---
+
+## 📊 Métriques de performance
 
 | Métrique | Valeur |
-|----------|--------|
+| --- | --- |
 | Records traités | 4 950 |
 | Temps de chargement (S3 → MongoDB ECS) | ~1.3 secondes |
 | Erreurs d'insertion | 0 |
@@ -211,34 +278,37 @@ Le script `load_mongodb.py` génère un rapport contenant :
 | Sources unifiées | 2 (InfoClimat + Weather Underground) |
 | Stations couvertes | 6 |
 
-## Choix de conception
+---
 
-- **Pipeline multi-sources** avec normalisation centralisée vers un schéma unique
-- **Validation côté base** MongoDB (`$jsonSchema`) pour garantir l'intégrité
-- **Séparation des responsabilités** : ingestion (Airbyte) / transformation (Python) / stockage (MongoDB)
-- **Pipeline idempotent** et relançable grâce aux upserts et index uniques
-- **Déploiement cloud** sur ECS Fargate pour un environnement production-ready
-- **Architecture compatible industrialisation** : séparation claire des étapes, logs, métriques, tests
+## 📂 Documentation complémentaire
 
-## Documentation complémentaire
+- 📄 [`docs/ARCHITECTURE_AWS.md`](./docs/ARCHITECTURE_AWS.md) — Architecture cloud détaillée
+- 📄 [`docs/LOGIGRAMME.md`](./docs/LOGIGRAMME.md) — Diagramme de flux du pipeline
+- 📄 [`docs/SCHEMA_BDD.md`](./docs/SCHEMA_BDD.md) — Schéma de la base de données
 
-- [`docs/ARCHITECTURE_AWS.md`](docs/ARCHITECTURE_AWS.md) — Architecture cloud détaillée
-- [`docs/LOGIGRAMME.md`](docs/LOGIGRAMME.md) — Diagramme de flux du pipeline
-- [`docs/SCHEMA_BDD.md`](docs/SCHEMA_BDD.md) — Schéma de la base de données
+---
 
-## Logigramme du pipeline
+## 🌱 Aller plus loin (V2)
 
-[Voir le diagramme Mermaid interactif](https://mermaid.ai/d/19e27a95-edb3-48dd-8376-31d66ff93959)
+- 🔄 **Orchestration** via Apache Airflow / Kestra plutôt qu'un script bash
+- 📊 **Monitoring proactif** avec alerting CloudWatch + intégration Slack/Discord
+- 🔐 **Secrets management** via AWS Secrets Manager (au lieu de `.env`)
+- 🌍 **Multi-région** : réplication MongoDB cross-region pour HA
+- 📈 **Métriques de drift** sur la qualité des données dans le temps
 
-```mermaid
-flowchart TD
-    A[Sources météo<br>InfoClimat JSON + WU Excel] --> B[Airbyte]
-    B --> C[AWS S3<br>Zone de staging]
-    C --> D[Transformation Python<br>transform_s3.py]
-    D --> E[Qualité pré-migration]
-    D --> F[weather_data.jsonl<br>sur S3]
-    F --> G[Chargement MongoDB<br>load_mongodb_s3.py]
-    G --> H[(MongoDB<br>ECS Fargate + EFS)]
-    G --> I[Qualité post-migration]
-    G --> J[Rapport & métriques]
-```
+---
+
+## 👤 Auteur
+
+**Mathieu Lowagie**  
+Data Engineer | Service Delivery Manager — 17 ans d'expérience B2B télécoms
+
+🔗 [LinkedIn](https://www.linkedin.com/in/mathieulowagie/) • 💼 [GitHub](https://github.com/Melkia44)
+
+---
+
+## 📄 Licence
+
+Projet réalisé dans le cadre du **Master 2 Data Engineering** (OpenClassrooms — Projet 8 *"Construisez et testez une infrastructure de données"*).
+
+Distribué sous licence **MIT** — voir [LICENSE](LICENSE) pour les détails.
